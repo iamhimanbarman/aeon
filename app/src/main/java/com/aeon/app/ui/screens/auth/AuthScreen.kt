@@ -1,0 +1,1109 @@
+package com.aeon.app.ui.screens.auth
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.aeon.app.R
+import com.aeon.app.data.auth.AuthException
+import com.aeon.app.data.auth.AuthRepository
+import com.aeon.app.data.auth.AuthSessionState
+import com.aeon.app.data.auth.VerifyOtpResult
+import com.aeon.app.ui.components.core.AeonCard
+import com.aeon.app.ui.components.core.AeonCardVariant
+import com.aeon.app.ui.components.core.AeonTextField
+import com.aeon.app.ui.components.core.AeonTextFieldVariant
+import com.aeon.app.ui.theme.AeonGradientFinanceEnd
+import com.aeon.app.ui.theme.AeonGradientFinanceStart
+import com.aeon.app.ui.theme.AeonPremiumGold
+import com.aeon.app.ui.theme.AeonSpacing
+import com.aeon.app.ui.theme.AeonTextStyles
+import com.aeon.app.ui.theme.AeonThemeTokens
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private enum class AuthStep {
+    Welcome,
+    SignUp,
+    VerifyOtp,
+    SetPassword,
+    SignIn
+}
+
+@Composable
+fun AeonAuthLoadingScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        AeonThemeTokens.colors.background,
+                        AeonThemeTokens.colors.backgroundAlt,
+                        AeonThemeTokens.colors.surfaceElevated
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(AeonSpacing.Medium)
+        ) {
+            Surface(
+                modifier = Modifier.size(92.dp),
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.08f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    Color.White.copy(alpha = 0.18f)
+                )
+            ) {
+                Image(
+                    painter = painterResource(id = R.mipmap.ic_launcher),
+                    contentDescription = "Aeon logo",
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+
+            Text(
+                text = "Preparing your secure workspace",
+                style = AeonTextStyles.SectionTitle,
+                color = AeonThemeTokens.colors.textPrimary
+            )
+        }
+    }
+}
+
+@Composable
+fun AeonAuthFlow(
+    authRepository: AuthRepository
+) {
+    val sessionState by authRepository.sessionState.collectAsState()
+    val colors = AeonThemeTokens.colors
+    val scrollState = rememberScrollState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var currentStep by rememberSaveable { mutableStateOf(AuthStep.Welcome.name) }
+    var firstName by rememberSaveable { mutableStateOf("") }
+    var lastName by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmPassword by rememberSaveable { mutableStateOf("") }
+    var otpCode by rememberSaveable { mutableStateOf("") }
+    var signupToken by rememberSaveable { mutableStateOf("") }
+    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var infoMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var resendAvailableAtMillis by rememberSaveable { mutableLongStateOf(0L) }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
+
+    val step = remember(currentStep) { AuthStep.valueOf(currentStep) }
+    val resendCountdown by produceState(initialValue = 0, resendAvailableAtMillis) {
+        if (resendAvailableAtMillis <= 0L) {
+            value = 0
+            return@produceState
+        }
+
+        while (true) {
+            val remaining = ((resendAvailableAtMillis - System.currentTimeMillis()) / 1000L).toInt()
+
+            if (remaining <= 0) {
+                value = 0
+                break
+            }
+
+            value = remaining
+            delay(1_000)
+        }
+    }
+
+    if (sessionState !is AuthSessionState.SignedOut) return
+
+    fun submit(block: suspend () -> Unit) {
+        scope.launch {
+            isSubmitting = true
+            errorMessage = null
+
+            try {
+                block()
+            } catch (throwable: Throwable) {
+                errorMessage = throwable.message ?: "Unable to complete the request right now."
+            } finally {
+                isSubmitting = false
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF28170B),
+                        Color(0xFF120C08),
+                        colors.background
+                    )
+                )
+            )
+    ) {
+        AeonAuthAmbientLayer()
+
+        if (step == AuthStep.Welcome) {
+            AeonLandingScreen(
+                onCreateAccount = {
+                    errorMessage = null
+                    infoMessage = null
+                    currentStep = AuthStep.SignUp.name
+                },
+                onExistingAccount = {
+                    errorMessage = null
+                    infoMessage = null
+                    currentStep = AuthStep.SignIn.name
+                },
+                onSkip = {
+                    errorMessage = null
+                    infoMessage = null
+                    authRepository.continueAsGuest()
+                }
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .systemBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                AeonAuthTopRow(
+                    actionLabel = when (step) {
+                        AuthStep.SignUp -> "Sign in"
+                        AuthStep.SignIn -> "Sign up"
+                        AuthStep.VerifyOtp -> "Change email"
+                        AuthStep.SetPassword -> "Sign in"
+                        AuthStep.Welcome -> ""
+                    },
+                    onActionClick = {
+                        errorMessage = null
+                        infoMessage = null
+                        currentStep = when (step) {
+                            AuthStep.SignUp -> AuthStep.SignIn.name
+                            AuthStep.SignIn -> AuthStep.SignUp.name
+                            AuthStep.VerifyOtp -> AuthStep.SignUp.name
+                            AuthStep.SetPassword -> AuthStep.SignIn.name
+                            AuthStep.Welcome -> currentStep
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(26.dp))
+
+                AeonAuthHero(
+                    title = when (step) {
+                        AuthStep.SignUp -> "Sign up in Aeon"
+                        AuthStep.SignIn -> "Sign in to Aeon"
+                        AuthStep.VerifyOtp -> "Verify your email"
+                        AuthStep.SetPassword -> "Set your password"
+                        AuthStep.Welcome -> ""
+                    },
+                    body = when (step) {
+                        AuthStep.VerifyOtp -> "Enter the 6-digit code sent to $email."
+                        AuthStep.SetPassword -> "Your account is almost ready. Add a strong password to protect it."
+                        else -> null
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                AnimatedVisibility(
+                    visible = !infoMessage.isNullOrBlank() || !errorMessage.isNullOrBlank(),
+                    enter = fadeIn(tween(220)),
+                    exit = fadeOut(tween(160))
+                ) {
+                    AeonCard(
+                        variant = AeonCardVariant.Glass,
+                        borderColor = if (errorMessage != null) {
+                            colors.error.copy(alpha = 0.36f)
+                        } else {
+                            AeonPremiumGold.copy(alpha = 0.28f)
+                        }
+                    ) {
+                        Text(
+                            text = errorMessage ?: infoMessage.orEmpty(),
+                            style = AeonTextStyles.EmptyStateBody,
+                            color = if (errorMessage != null) colors.error else colors.textSecondary
+                        )
+                    }
+                }
+
+                if (!infoMessage.isNullOrBlank() || !errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(18.dp))
+                }
+
+                when (step) {
+                    AuthStep.SignUp -> {
+                        AeonAuthFormCard {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                AeonTextField(
+                                    value = firstName,
+                                    onValueChange = { firstName = it },
+                                    modifier = Modifier.weight(1f),
+                                    label = "First name",
+                                    placeholder = "First name",
+                                    variant = AeonTextFieldVariant.Glass,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                                )
+
+                                AeonTextField(
+                                    value = lastName,
+                                    onValueChange = { lastName = it },
+                                    modifier = Modifier.weight(1f),
+                                    label = "Last name",
+                                    placeholder = "Last name",
+                                    variant = AeonTextFieldVariant.Glass,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            AeonTextField(
+                                value = email,
+                                onValueChange = { email = it },
+                                label = "Email",
+                                placeholder = "Enter your email",
+                                variant = AeonTextFieldVariant.Glass,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Email,
+                                    imeAction = ImeAction.Done
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            AeonAuthPrimaryButton(
+                                text = "Continue",
+                                onClick = {
+                                    submit {
+                                        if (firstName.isBlank()) throw AuthException("First name is required.")
+                                        if (email.isBlank()) throw AuthException("Email is required.")
+                                        val result = authRepository.requestSignupOtp(email)
+                                        otpCode = ""
+                                        resendAvailableAtMillis =
+                                            System.currentTimeMillis() + result.resendAfterSeconds * 1_000L
+                                        currentStep = AuthStep.VerifyOtp.name
+                                        infoMessage = "A verification code has been sent to $email."
+                                    }
+                                },
+                                loading = isSubmitting
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            AeonGoogleButton(
+                                onClick = {
+                                    submit {
+                                        val url = authRepository.getGmailAuthUrl()
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        infoMessage = "Complete the Gmail verification in your browser."
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    AuthStep.SignIn -> {
+                        AeonAuthFormCard {
+                            AeonTextField(
+                                value = email,
+                                onValueChange = { email = it },
+                                label = "Email address",
+                                placeholder = "Enter your email",
+                                variant = AeonTextFieldVariant.Glass,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Email,
+                                    imeAction = ImeAction.Next
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            AeonTextField(
+                                value = password,
+                                onValueChange = { password = it },
+                                label = "Password",
+                                placeholder = "Enter your password",
+                                variant = AeonTextFieldVariant.Glass,
+                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Password,
+                                    imeAction = ImeAction.Done
+                                ),
+                                trailingIcon = {
+                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                        Icon(
+                                            imageVector = if (passwordVisible) {
+                                                Icons.Outlined.VisibilityOff
+                                            } else {
+                                                Icons.Outlined.Visibility
+                                            },
+                                            contentDescription = null
+                                        )
+                                    }
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            AeonAuthPrimaryButton(
+                                text = "Login",
+                                onClick = {
+                                    submit {
+                                        if (email.isBlank() || password.isBlank()) {
+                                            throw AuthException("Email and password are required.")
+                                        }
+
+                                        authRepository.signIn(email, password)
+                                    }
+                                },
+                                loading = isSubmitting
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            AeonGoogleButton(
+                                onClick = {
+                                    submit {
+                                        val url = authRepository.getGmailAuthUrl()
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        infoMessage = "Complete the Gmail verification in your browser."
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    AuthStep.VerifyOtp -> {
+                        AeonAuthFormCard {
+                            AeonOtpField(
+                                value = otpCode,
+                                onValueChange = { otpCode = it }
+                            )
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            AeonAuthPrimaryButton(
+                                text = "Verify code",
+                                onClick = {
+                                    submit {
+                                        if (otpCode.length != 6) {
+                                            throw AuthException("Enter the full 6-digit code.")
+                                        }
+
+                                        val result = authRepository.verifySignupOtp(email, otpCode)
+
+                                        when (result.nextStep) {
+                                            VerifyOtpResult.NextStep.SetPassword -> {
+                                                signupToken = result.signupToken.orEmpty()
+                                                currentStep = AuthStep.SetPassword.name
+                                                infoMessage = null
+                                            }
+
+                                            VerifyOtpResult.NextStep.SignIn -> {
+                                                password = ""
+                                                confirmPassword = ""
+                                                currentStep = AuthStep.SignIn.name
+                                                infoMessage = "This email already has an account. Sign in to continue."
+                                            }
+                                        }
+                                    }
+                                },
+                                loading = isSubmitting
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (resendCountdown > 0) {
+                                        "Resend in ${resendCountdown}s"
+                                    } else {
+                                        "Didn't get the code?"
+                                    },
+                                    style = AeonTextStyles.Caption,
+                                    color = colors.textTertiary
+                                )
+
+                                Text(
+                                    text = "Resend OTP",
+                                    style = AeonTextStyles.ButtonMedium,
+                                    color = if (resendCountdown > 0) colors.textDisabled else colors.textPrimary,
+                                    modifier = Modifier.clickable(enabled = resendCountdown == 0 && !isSubmitting) {
+                                        submit {
+                                            val result = authRepository.requestSignupOtp(email)
+                                            resendAvailableAtMillis =
+                                                System.currentTimeMillis() + result.resendAfterSeconds * 1_000L
+                                            infoMessage = "A fresh code has been sent to $email."
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    AuthStep.SetPassword -> {
+                        AeonAuthFormCard {
+                            AeonTextField(
+                                value = password,
+                                onValueChange = { password = it },
+                                label = "Password",
+                                placeholder = "Create a strong password",
+                                helperText = "Use 10+ characters with upper, lower, and a number.",
+                                variant = AeonTextFieldVariant.Glass,
+                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Password,
+                                    imeAction = ImeAction.Next
+                                ),
+                                trailingIcon = {
+                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                        Icon(
+                                            imageVector = if (passwordVisible) {
+                                                Icons.Outlined.VisibilityOff
+                                            } else {
+                                                Icons.Outlined.Visibility
+                                            },
+                                            contentDescription = null
+                                        )
+                                    }
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            AeonTextField(
+                                value = confirmPassword,
+                                onValueChange = { confirmPassword = it },
+                                label = "Confirm password",
+                                placeholder = "Re-enter your password",
+                                variant = AeonTextFieldVariant.Glass,
+                                visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Password,
+                                    imeAction = ImeAction.Done
+                                ),
+                                trailingIcon = {
+                                    IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                        Icon(
+                                            imageVector = if (confirmPasswordVisible) {
+                                                Icons.Outlined.VisibilityOff
+                                            } else {
+                                                Icons.Outlined.Visibility
+                                            },
+                                            contentDescription = null
+                                        )
+                                    }
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            AeonAuthPrimaryButton(
+                                text = "Create account",
+                                onClick = {
+                                    submit {
+                                        if (signupToken.isBlank()) {
+                                            throw AuthException("Your signup session expired. Start again.")
+                                        }
+
+                                        if (password != confirmPassword) {
+                                            throw AuthException("Passwords do not match.")
+                                        }
+
+                                        authRepository.completeSignup(
+                                            signupToken = signupToken,
+                                            password = password,
+                                            displayName = listOf(firstName.trim(), lastName.trim())
+                                                .filter(String::isNotBlank)
+                                                .joinToString(" ")
+                                                .ifBlank { null }
+                                        )
+                                    }
+                                },
+                                loading = isSubmitting
+                            )
+                        }
+                    }
+
+                    AuthStep.Welcome -> Unit
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Aeon encrypts your session locally on this device and keeps verification on the backend.",
+                    style = AeonTextStyles.Caption,
+                    color = colors.textTertiary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AeonAuthTopRow(
+    actionLabel: String,
+    onActionClick: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        if (actionLabel.isNotBlank()) {
+            Text(
+                text = actionLabel,
+                style = AeonTextStyles.ButtonMedium,
+                color = AeonThemeTokens.colors.textPrimary,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .clickable(onClick = onActionClick)
+                    .padding(vertical = 6.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AeonAuthHero(
+    title: String,
+    body: String?
+) {
+    val colors = AeonThemeTokens.colors
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        AeonAuthLogoStack()
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary,
+                textAlign = TextAlign.Center
+            )
+
+            if (!body.isNullOrBlank()) {
+                Text(
+                    text = body,
+                    style = AeonTextStyles.EmptyStateBody,
+                    color = colors.textSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AeonLandingScreen(
+    onCreateAccount: () -> Unit,
+    onExistingAccount: () -> Unit,
+    onSkip: () -> Unit
+) {
+    val colors = AeonThemeTokens.colors
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 20.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "Skip",
+                style = AeonTextStyles.ButtonMedium,
+                color = colors.textPrimary,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .clickable(onClick = onSkip)
+                    .padding(vertical = 6.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Image(
+                painter = painterResource(id = R.mipmap.ic_launcher),
+                contentDescription = "Aeon logo",
+                modifier = Modifier.size(42.dp)
+            )
+
+            Text(
+                text = "Aeon - Private Command Center for Focus, Finance, and Daily Life",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        AeonAuthPrimaryButton(
+            text = "Sign up",
+            onClick = onCreateAccount
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        AeonAuthSecondaryButton(
+            modifier = Modifier.fillMaxWidth(),
+            text = "I have an account",
+            onClick = onExistingAccount
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "Skip to use Aeon in local-only mode. Your focus, task, and finance data stay on this device.",
+            style = AeonTextStyles.Caption,
+            color = colors.textTertiary,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun AeonAuthLogoStack()
+{
+    val colors = AeonThemeTokens.colors
+
+    Box(
+        modifier = Modifier.size(width = 180.dp, height = 154.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(126.dp)
+                .graphicsLayer {
+                    rotationZ = 45f
+                    translationY = 22f
+                }
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(colors.surface.copy(alpha = 0.28f))
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.06f),
+                    shape = MaterialTheme.shapes.extraLarge
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .size(114.dp)
+                .graphicsLayer {
+                    rotationZ = 45f
+                    translationY = 8f
+                }
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(colors.surfaceElevated.copy(alpha = 0.40f))
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.10f),
+                    shape = MaterialTheme.shapes.extraLarge
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .graphicsLayer { rotationZ = 45f }
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            AeonGradientFinanceEnd.copy(alpha = 0.88f),
+                            AeonGradientFinanceStart.copy(alpha = 0.92f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    color = AeonPremiumGold.copy(alpha = 0.45f),
+                    shape = MaterialTheme.shapes.extraLarge
+                )
+        )
+
+        Image(
+            painter = painterResource(id = R.mipmap.ic_launcher),
+            contentDescription = "Aeon logo",
+            modifier = Modifier.size(58.dp)
+        )
+    }
+}
+
+@Composable
+private fun AeonAuthFormCard(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun AeonAuthPrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    loading: Boolean = false
+) {
+    Surface(
+        onClick = onClick,
+        enabled = !loading,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp),
+        shape = CircleShape,
+        color = Color.Transparent,
+        shadowElevation = 10.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            AeonGradientFinanceEnd,
+                            AeonGradientFinanceStart
+                        )
+                    ),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = Color(0xFF111318)
+                )
+            } else {
+                Text(
+                    text = text,
+                    style = AeonTextStyles.ButtonMedium,
+                    color = Color(0xFF111318),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AeonAuthSecondaryButton(
+    modifier: Modifier = Modifier,
+    text: String,
+    onClick: () -> Unit,
+    leadingIcon: (@Composable () -> Unit)? = null
+) {
+    val colors = AeonThemeTokens.colors
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(54.dp),
+        shape = CircleShape,
+        color = colors.surface.copy(alpha = 0.92f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSoft)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (leadingIcon != null) {
+                leadingIcon()
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+
+            Text(
+                text = text,
+                style = AeonTextStyles.ButtonMedium,
+                color = colors.textPrimary
+            )
+        }
+    }
+}
+
+@Composable
+private fun AeonGoogleButton(
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        AeonAuthSecondaryButton(
+            modifier = Modifier.fillMaxWidth(0.54f),
+            text = "Google",
+            onClick = onClick,
+            leadingIcon = {
+                AeonGoogleMark(modifier = Modifier.size(18.dp))
+            }
+        )
+    }
+}
+
+@Composable
+private fun AeonGoogleMark(
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.18f
+        val inset = strokeWidth / 2f
+        val arcSize = Size(
+            width = size.width - strokeWidth,
+            height = size.height - strokeWidth
+        )
+        val topLeft = Offset(inset, inset)
+        val style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+
+        drawArc(
+            color = Color(0xFFEA4335),
+            startAngle = -42f,
+            sweepAngle = 82f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = style
+        )
+        drawArc(
+            color = Color(0xFFFBBC05),
+            startAngle = 40f,
+            sweepAngle = 92f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = style
+        )
+        drawArc(
+            color = Color(0xFF34A853),
+            startAngle = 132f,
+            sweepAngle = 116f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = style
+        )
+        drawArc(
+            color = Color(0xFF4285F4),
+            startAngle = 248f,
+            sweepAngle = 112f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = style
+        )
+        drawLine(
+            color = Color(0xFF4285F4),
+            start = Offset(size.width * 0.56f, size.height * 0.51f),
+            end = Offset(size.width * 0.92f, size.height * 0.51f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun AeonOtpField(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    val colors = AeonThemeTokens.colors
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = "Verification code",
+            style = AeonTextStyles.InputLabel,
+            color = colors.textSecondary
+        )
+
+        BasicTextField(
+            value = value,
+            onValueChange = { next ->
+                if (next.length <= 6 && next.all(Char::isDigit)) {
+                    onValueChange(next)
+                }
+            },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.NumberPassword,
+                imeAction = ImeAction.Done
+            ),
+            decorationBox = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    repeat(6) { index ->
+                        val hasValue = index < value.length
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(64.dp)
+                                .clip(MaterialTheme.shapes.large)
+                                .background(colors.surface.copy(alpha = 0.92f))
+                                .border(
+                                    width = 1.dp,
+                                    color = if (hasValue) {
+                                        AeonPremiumGold.copy(alpha = 0.65f)
+                                    } else {
+                                        colors.borderSoft
+                                    },
+                                    shape = MaterialTheme.shapes.large
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = value.getOrNull(index)?.toString().orEmpty(),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun AeonAuthAmbientLayer() {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            AeonGradientFinanceStart.copy(alpha = 0.26f),
+                            Color.Transparent
+                        ),
+                        radius = 980f
+                    )
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .size(width = 220.dp, height = 340.dp)
+                .graphicsLayer {
+                    rotationZ = 28f
+                    translationX = -50f
+                    translationY = 10f
+                }
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(Color.White.copy(alpha = 0.05f))
+        )
+
+        Box(
+            modifier = Modifier
+                .size(width = 150.dp, height = 280.dp)
+                .graphicsLayer {
+                    rotationZ = 22f
+                    translationX = 180f
+                    translationY = 48f
+                }
+                .clip(MaterialTheme.shapes.extraLarge)
+                .background(AeonGradientFinanceEnd.copy(alpha = 0.09f))
+        )
+    }
+}

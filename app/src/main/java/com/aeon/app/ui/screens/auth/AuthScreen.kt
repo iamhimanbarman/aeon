@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -55,6 +56,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -65,6 +67,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aeon.app.R
 import com.aeon.app.data.auth.AuthException
@@ -758,67 +761,118 @@ private fun AeonLandingScreen(
 private fun AeonAuthLogoStack()
 {
     val colors = AeonThemeTokens.colors
+    val panelShape = RoundedCornerShape(34.dp)
+    val platformShape = RoundedCornerShape(18.dp)
+    val warmAmber = Color(0xFFFF8E2C)
+    val warmGold = Color(0xFFFFC85A)
 
     Box(
-        modifier = Modifier.size(width = 180.dp, height = 154.dp),
+        modifier = Modifier.size(width = 192.dp, height = 162.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .size(126.dp)
+                .size(width = 168.dp, height = 30.dp)
                 .graphicsLayer {
-                    rotationZ = 45f
-                    translationY = 22f
+                    translationY = 88f
                 }
-                .clip(MaterialTheme.shapes.extraLarge)
-                .background(colors.surface.copy(alpha = 0.28f))
+                .clip(platformShape)
+                .background(Color.Black.copy(alpha = 0.18f))
                 .border(
                     width = 1.dp,
-                    color = Color.White.copy(alpha = 0.06f),
-                    shape = MaterialTheme.shapes.extraLarge
+                    color = Color.White.copy(alpha = 0.04f),
+                    shape = platformShape
                 )
         )
 
         Box(
             modifier = Modifier
-                .size(114.dp)
+                .size(width = 152.dp, height = 22.dp)
                 .graphicsLayer {
-                    rotationZ = 45f
-                    translationY = 8f
+                    translationY = 80f
                 }
-                .clip(MaterialTheme.shapes.extraLarge)
-                .background(colors.surfaceElevated.copy(alpha = 0.40f))
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.10f),
-                    shape = MaterialTheme.shapes.extraLarge
-                )
-        )
-
-        Box(
-            modifier = Modifier
-                .size(88.dp)
-                .graphicsLayer { rotationZ = 45f }
-                .clip(MaterialTheme.shapes.extraLarge)
+                .clip(platformShape)
                 .background(
-                    Brush.linearGradient(
+                    Brush.verticalGradient(
                         listOf(
-                            AeonGradientFinanceEnd.copy(alpha = 0.88f),
-                            AeonGradientFinanceStart.copy(alpha = 0.92f)
+                            Color(0x24FFF2E5),
+                            Color(0x143A2415),
+                            Color(0x220C0806)
                         )
                     )
                 )
                 .border(
                     width = 1.dp,
-                    color = AeonPremiumGold.copy(alpha = 0.45f),
-                    shape = MaterialTheme.shapes.extraLarge
+                    color = Color.White.copy(alpha = 0.08f),
+                    shape = platformShape
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .size(116.dp)
+                .graphicsLayer {
+                    rotationZ = 45f
+                    translationY = 12f
+                }
+                .clip(panelShape)
+                .background(Color.Black.copy(alpha = 0.16f))
+        )
+
+        Box(
+            modifier = Modifier
+                .size(112.dp)
+                .graphicsLayer { rotationZ = 45f }
+                .clip(panelShape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0x2BFFF1E4),
+                            Color(0x1E4A2812),
+                            Color(0x1B140D08)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.09f),
+                    shape = panelShape
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.06f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.10f)
+                            )
+                        )
+                    )
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .size(66.dp)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            warmGold.copy(alpha = 0.24f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
                 )
         )
 
         Image(
             painter = painterResource(id = R.mipmap.ic_launcher),
             contentDescription = "Aeon logo",
-            modifier = Modifier.size(58.dp)
+            modifier = Modifier.size(56.dp),
+            colorFilter = ColorFilter.tint(warmAmber)
         )
     }
 }
@@ -887,13 +941,14 @@ private fun AeonAuthSecondaryButton(
     modifier: Modifier = Modifier,
     text: String,
     onClick: () -> Unit,
+    buttonHeight: Dp = 54.dp,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
     val colors = AeonThemeTokens.colors
 
     Surface(
         onClick = onClick,
-        modifier = modifier.height(54.dp),
+        modifier = modifier.height(buttonHeight),
         shape = CircleShape,
         color = colors.surface.copy(alpha = 0.92f),
         border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSoft)
@@ -923,19 +978,15 @@ private fun AeonAuthSecondaryButton(
 private fun AeonGoogleButton(
     onClick: () -> Unit
 ) {
-    Box(
+    AeonAuthSecondaryButton(
         modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
-    ) {
-        AeonAuthSecondaryButton(
-            modifier = Modifier.fillMaxWidth(0.54f),
-            text = "Google",
-            onClick = onClick,
-            leadingIcon = {
-                AeonGoogleMark(modifier = Modifier.size(18.dp))
-            }
-        )
-    }
+        text = "Google",
+        onClick = onClick,
+        buttonHeight = 58.dp,
+        leadingIcon = {
+            AeonGoogleMark(modifier = Modifier.size(18.dp))
+        }
+    )
 }
 
 @Composable
@@ -1074,36 +1125,82 @@ private fun AeonAuthAmbientLayer() {
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            AeonGradientFinanceStart.copy(alpha = 0.26f),
+                            Color(0xB8C9792F),
+                            Color(0x66271409),
                             Color.Transparent
                         ),
-                        radius = 980f
+                        center = Offset(90f, 120f),
+                        radius = 920f
                     )
                 )
         )
 
-        Box(
+        AeonAmbientPanel(
             modifier = Modifier
-                .size(width = 220.dp, height = 340.dp)
+                .size(width = 230.dp, height = 520.dp)
                 .graphicsLayer {
                     rotationZ = 28f
-                    translationX = -50f
-                    translationY = 10f
-                }
-                .clip(MaterialTheme.shapes.extraLarge)
-                .background(Color.White.copy(alpha = 0.05f))
+                    translationX = -130f
+                    translationY = -78f
+                },
+            fill = Brush.linearGradient(
+                colors = listOf(
+                    Color(0x3D8D5426),
+                    Color(0x262A160A)
+                )
+            ),
+            borderColor = Color(0x2EF4CAA2)
         )
 
+        AeonAmbientPanel(
+            modifier = Modifier
+                .size(width = 255.dp, height = 560.dp)
+                .graphicsLayer {
+                    rotationZ = 28f
+                    translationX = 148f
+                    translationY = -52f
+                },
+            fill = Brush.linearGradient(
+                colors = listOf(
+                    Color(0x2B6F4120),
+                    Color(0x14110907)
+                )
+            ),
+            borderColor = Color(0x22FFD5AF)
+        )
+    }
+}
+
+@Composable
+private fun AeonAmbientPanel(
+    modifier: Modifier,
+    fill: Brush,
+    borderColor: Color
+) {
+    val shape = RoundedCornerShape(44.dp)
+
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(fill)
+            .border(
+                width = 1.dp,
+                color = borderColor,
+                shape = shape
+            )
+    ) {
         Box(
             modifier = Modifier
-                .size(width = 150.dp, height = 280.dp)
-                .graphicsLayer {
-                    rotationZ = 22f
-                    translationX = 180f
-                    translationY = 48f
-                }
-                .clip(MaterialTheme.shapes.extraLarge)
-                .background(AeonGradientFinanceEnd.copy(alpha = 0.09f))
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.05f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.10f)
+                        )
+                    )
+                )
         )
     }
 }

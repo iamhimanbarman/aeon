@@ -1,16 +1,20 @@
 package com.aeon.app.ui.screens.finance
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -329,7 +334,16 @@ private fun FinanceCategoryTile(
                     style = AeonTextStyles.CardTitle.copy(
                         color = colors.textPrimary,
                         fontWeight = FontWeight.Medium
-                    )
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .basicMarquee(
+                            iterations = Int.MAX_VALUE,
+                            animationMode = MarqueeAnimationMode.Immediately,
+                            repeatDelayMillis = 2_000
+                        )
                 )
                 Text(
                     text = if (category.isDefault) "Default category" else "Custom category",
@@ -471,95 +485,104 @@ private fun FinanceCategoryEditorScreen(
 
     AeonScreen(
         modifier = modifier,
-        config = AeonScreenConfig(safeDrawing = true),
+        config = AeonScreenConfig(safeDrawing = true, scrollable = false),
         backgroundBrush = aeonPremiumBackgroundBrush(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = if (editingCategory == null) "New custom category" else "Edit category",
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, start = 2.dp),
-            style = AeonTextStyles.SectionTitle.copy(color = colors.textPrimary)
-        )
-
-        AeonCard(
-            variant = AeonCardVariant.Hero,
-            containerColor = colors.surfaceElevated
+                .fillMaxSize()
+                .weight(1f, fill = true),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(CircleShape)
-                        .background(colors.surface),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = financeIconForKey(selectedIconKey),
-                        contentDescription = null,
-                        tint = colors.finance,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = categoryName.ifBlank { "Category preview" },
-                        style = AeonTextStyles.CardTitle.copy(
-                            color = colors.textPrimary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    )
-                    Text(
-                        text = financeFamilyLabel(
-                            selectedFamilyKey.ifBlank {
-                                com.aeon.app.data.local.database.entities.FinanceCategoryFamilyStorage.Core
-                            }
-                        ),
-                        style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            AeonTextField(
-                value = categoryName,
-                onValueChange = { categoryName = it },
-                label = "Category name",
-                placeholder = "Enter category name",
-                errorText = when {
-                    categoryName.isBlank() -> "Category name is required."
-                    duplicateName -> "Category name already exists."
-                    else -> null
-                },
-                variant = AeonTextFieldVariant.Tonal,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Words,
-                    autoCorrectEnabled = true,
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Next
-                )
+            Text(
+                text = if (editingCategory == null) "New custom category" else "Edit category",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, start = 2.dp),
+                style = AeonTextStyles.SectionTitle.copy(color = colors.textPrimary)
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            AeonTextField(
-                value = iconSearch,
-                onValueChange = { iconSearch = it },
-                label = "Find icon",
-                placeholder = "Search by label or section",
-                variant = AeonTextFieldVariant.Tonal,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Words,
-                    autoCorrectEnabled = true,
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Done
-                )
-            )
-        }
 
+            AeonCard(
+                variant = AeonCardVariant.Hero,
+                containerColor = colors.surfaceElevated
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .clip(CircleShape)
+                            .background(colors.surface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = financeIconForKey(selectedIconKey),
+                            contentDescription = null,
+                            tint = colors.finance,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = categoryName.ifBlank { "Category preview" },
+                            style = AeonTextStyles.CardTitle.copy(
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                        Text(
+                            text = financeFamilyLabel(
+                                selectedFamilyKey.ifBlank {
+                                    com.aeon.app.data.local.database.entities.FinanceCategoryFamilyStorage.Core
+                                }
+                            ),
+                            style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                AeonTextField(
+                    value = categoryName,
+                    onValueChange = { categoryName = it },
+                    label = "Category name",
+                    placeholder = "Enter category name",
+                    errorText = if (duplicateName) "Category name already exists." else null,
+                    variant = AeonTextFieldVariant.Tonal,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        autoCorrectEnabled = true,
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Next
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                AeonTextField(
+                    value = iconSearch,
+                    onValueChange = { iconSearch = it },
+                    label = "Find icon",
+                    placeholder = "Search by label or section",
+                    variant = AeonTextFieldVariant.Tonal,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        autoCorrectEnabled = true,
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    )
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = true)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 filteredIcons
                     .groupBy(FinanceIconOption::familyKey)
                     .forEach { (familyKey, icons) ->
@@ -570,20 +593,25 @@ private fun FinanceCategoryEditorScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                         )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            maxItemsInEachRow = 4
-                        ) {
-                            icons.forEach { iconOption ->
-                                FinanceIconChoice(
-                                    option = iconOption,
-                                    selected = selectedIconKey == iconOption.key,
-                                    onClick = {
-                                        selectedIconKey = iconOption.key
-                                        selectedFamilyKey = iconOption.familyKey
-                                    }
-                                )
+                        icons.chunked(4).forEach { iconRow ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                iconRow.forEach { iconOption ->
+                                    FinanceIconChoice(
+                                        option = iconOption,
+                                        selected = selectedIconKey == iconOption.key,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            selectedIconKey = iconOption.key
+                                            selectedFamilyKey = iconOption.familyKey
+                                        }
+                                    )
+                                }
+                                repeat(4 - iconRow.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
                     }
@@ -599,42 +627,50 @@ private fun FinanceCategoryEditorScreen(
                     }
                 }
 
-                AeonButton(
-                    text = if (editingCategory == null) "Create category" else "Save category",
-                    onClick = {
-                        val cleanName = categoryName.trim()
-                        if (cleanName.isBlank() || duplicateName) return@AeonButton
+                Spacer(modifier = Modifier.height(2.dp))
+            }
 
-                        if (editingCategory == null) {
-                            onCreateCategory(cleanName, selectedIconKey, selectedFamilyKey)
-                        } else {
-                            onUpdateCategory(editingCategory.key, cleanName, selectedIconKey, selectedFamilyKey)
-                        }
-                        onBack()
-                    },
-                    enabled = categoryName.isNotBlank() && !duplicateName,
-                    variant = AeonButtonVariant.Primary,
-                    size = AeonButtonSize.Medium,
-                    fullWidth = true
-                )
+            AeonButton(
+                text = if (editingCategory == null) "Create category" else "Save category",
+                onClick = {
+                    val cleanName = categoryName.trim()
+                    if (cleanName.isBlank() || duplicateName) return@AeonButton
+
+                    if (editingCategory == null) {
+                        onCreateCategory(cleanName, selectedIconKey, selectedFamilyKey)
+                    } else {
+                        onUpdateCategory(editingCategory.key, cleanName, selectedIconKey, selectedFamilyKey)
+                    }
+                    onBack()
+                },
+                enabled = categoryName.isNotBlank() && !duplicateName,
+                variant = AeonButtonVariant.Primary,
+                size = AeonButtonSize.Medium,
+                fullWidth = true
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FinanceIconChoice(
     option: FinanceIconOption,
     selected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val colors = AeonThemeTokens.colors
 
     AeonCard(
-        modifier = Modifier.width(78.dp),
+        modifier = modifier
+            .aspectRatio(1f),
         variant = AeonCardVariant.Compact,
         onClick = onClick,
         fullWidth = false,
         containerColor = if (selected) colors.surfaceElevated else colors.surface,
-        borderColor = if (selected) colors.finance else colors.border
+        borderColor = if (selected) colors.finance else colors.border,
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -643,7 +679,7 @@ private fun FinanceIconChoice(
         ) {
             Box(
                 modifier = Modifier
-                    .size(34.dp)
+                    .size(30.dp)
                     .clip(CircleShape)
                     .background(if (selected) colors.finance.copy(alpha = 0.18f) else colors.surfaceElevated),
                 contentAlignment = Alignment.Center
@@ -652,14 +688,22 @@ private fun FinanceIconChoice(
                     imageVector = option.icon,
                     contentDescription = option.label,
                     tint = if (selected) colors.finance else colors.textPrimary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
             Text(
                 text = option.label,
                 style = AeonTextStyles.Micro.copy(color = colors.textPrimary),
                 textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(min = 48.dp)
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .basicMarquee(
+                        iterations = Int.MAX_VALUE,
+                        animationMode = MarqueeAnimationMode.Immediately,
+                        repeatDelayMillis = 2_000
+                    )
             )
         }
     }

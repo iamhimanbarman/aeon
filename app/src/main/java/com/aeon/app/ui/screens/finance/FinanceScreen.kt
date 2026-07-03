@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.MarqueeAnimationMode
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FilterList
@@ -74,6 +77,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -95,9 +99,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aeon.app.data.auth.AuthSessionState
 import com.aeon.app.data.local.database.entities.BudgetEntity
 import com.aeon.app.data.local.database.entities.FinanceAccountEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryCatalog
@@ -232,20 +238,6 @@ fun FinanceTopBarActions(config: FinanceTopBarConfig) {
                         config.onOpenCategories()
                     }
                 )
-                DropdownMenuItem(
-                    text = { Text("Import data") },
-                    onClick = {
-                        actionsExpanded = false
-                        config.onOpenImportData()
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Entry modes") },
-                    onClick = {
-                        actionsExpanded = false
-                        config.onOpenEntryModes()
-                    }
-                )
             }
         }
     }
@@ -285,12 +277,16 @@ fun AeonFinanceOverviewRoute(
     onOpenTransaction: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val container = currentAeonAppContainer()
     val viewModel = aeonViewModel<AeonFinanceViewModel>()
     val viewState by viewModel.uiState.collectAsStateWithLifecycle()
+    val authState by container.authRepository.sessionState.collectAsStateWithLifecycle()
+    val accessToken = (authState as? AuthSessionState.Authenticated)?.session?.accessToken
 
     FinanceOverviewScreen(
         state = viewState,
         monthKey = monthKey,
+        accessToken = accessToken,
         onBack = onBack,
         onOpenTransaction = onOpenTransaction,
         modifier = modifier
@@ -583,7 +579,6 @@ private fun FinanceScreen(
     if (showEntryModeSheet) {
         FinanceEntryModeSheet(
             title = "Entry modes",
-            subtitle = "Pick the capture mode. Every option lands in the same structured entry flow.",
             showManualModes = true,
             onDismiss = { showEntryModeSheet = false },
             onManualExpense = {
@@ -616,7 +611,6 @@ private fun FinanceScreen(
     if (showImportModeSheet) {
         FinanceEntryModeSheet(
             title = "Import data",
-            subtitle = "Choose how you want to import finance data into the entry flow.",
             showManualModes = false,
             onDismiss = { showImportModeSheet = false },
             onManualExpense = {},
@@ -681,12 +675,33 @@ private fun FinanceScreen(
 private fun FinanceOverviewScreen(
     state: FinanceViewState,
     monthKey: String,
+    accessToken: String?,
     onBack: () -> Unit,
     onOpenTransaction: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val selectedMonth = remember(monthKey) { monthKey.toYearMonthOrNow() }
-    val categoryOptions = remember(state.categories) { financeCategoryOptions(state.categories) }
+    val localCategoryOptions = remember(state.categories) { financeCategoryOptions(state.categories) }
+    val remoteClient = remember { FinanceRemoteClient() }
+    val remoteEnabled = remember(accessToken, remoteClient) {
+        !accessToken.isNullOrBlank() && remoteClient.isConfigured()
+    }
+    val remoteExpenseCategories by produceState(
+        initialValue = emptyList<FinanceCategoryOption>(),
+        accessToken,
+        remoteEnabled
+    ) {
+        value = if (!remoteEnabled || accessToken.isNullOrBlank()) {
+            emptyList()
+        } else {
+            runCatching {
+                remoteClient.fetchExpenseCategories(accessToken)
+            }.getOrElse { emptyList() }
+        }
+    }
+    val categoryOptions = remember(localCategoryOptions, remoteExpenseCategories) {
+        mergeFinanceCategoryOptions(localCategoryOptions, remoteExpenseCategories)
+    }
     val snapshot = remember(state.accounts, state.transactions, state.budgets, selectedMonth) {
         buildFinanceMonthSnapshot(state, selectedMonth)
     }
@@ -702,8 +717,29 @@ private fun FinanceOverviewScreen(
     var ledgerFilter by remember(selectedMonth) {
         mutableStateOf(defaultFinanceLedgerFilter(selectedMonth))
     }
-    val filteredLedgerTransactions = remember(expenseTransactions, ledgerFilter, selectedMonth) {
+    val localFilteredLedgerTransactions = remember(expenseTransactions, ledgerFilter, selectedMonth) {
         ledgerFilter.filterTransactions(expenseTransactions, selectedMonth)
+    }
+    val remoteFilteredLedgerTransactions by produceState(
+        initialValue = emptyList<FinanceTransactionEntity>(),
+        accessToken,
+        remoteEnabled,
+        ledgerFilter,
+        selectedMonth
+    ) {
+        value = if (!remoteEnabled || accessToken.isNullOrBlank()) {
+            emptyList()
+        } else {
+            runCatching {
+                remoteClient.fetchExpenseTransactions(
+                    accessToken = accessToken,
+                    query = ledgerFilter.toRemoteTransactionQuery(selectedMonth)
+                )
+            }.getOrElse { emptyList() }
+        }
+    }
+    val filteredLedgerTransactions = remember(localFilteredLedgerTransactions, remoteFilteredLedgerTransactions) {
+        mergeFinanceTransactions(localFilteredLedgerTransactions, remoteFilteredLedgerTransactions)
     }
     val ledgerTitle = remember(ledgerFilter, expenseCategories, selectedMonth) {
         ledgerFilter.title(expenseCategories, selectedMonth)
@@ -748,6 +784,8 @@ private fun FinanceOverviewScreen(
             overviewMonth = selectedMonth,
             expenseCategories = expenseCategories,
             transactions = expenseTransactions,
+            accessToken = accessToken,
+            remoteClient = remoteClient.takeIf { remoteEnabled },
             onDismiss = { showLedgerFilterSheet = false },
             onApply = { nextFilter ->
                 ledgerFilter = nextFilter
@@ -1071,11 +1109,16 @@ private fun FinanceExpenseLedgerFilterSheet(
     overviewMonth: YearMonth,
     expenseCategories: List<FinanceCategoryOption>,
     transactions: List<FinanceTransactionEntity>,
+    accessToken: String?,
+    remoteClient: FinanceRemoteClient?,
     onDismiss: () -> Unit,
     onApply: (FinanceLedgerFilter) -> Unit
 ) {
     val colors = AeonThemeTokens.colors
     val context = LocalContext.current
+    val remoteEnabled = remember(accessToken, remoteClient) {
+        !accessToken.isNullOrBlank() && remoteClient != null
+    }
     val groupedExpenseCategories = remember(expenseCategories) {
         financeIconFamilies.mapNotNull { familyKey ->
             expenseCategories
@@ -1087,17 +1130,100 @@ private fun FinanceExpenseLedgerFilterSheet(
     val transactionDates = remember(transactions) {
         transactions.map { transaction -> transaction.occurredLocalDate() }
     }
-    val minDate = remember(transactionDates, overviewMonth) {
-        transactionDates.minOrNull() ?: overviewMonth.defaultLedgerDate()
-    }
-    val maxDate = remember(transactionDates, overviewMonth) {
-        maxOf(transactionDates.maxOrNull() ?: overviewMonth.defaultLedgerDate(), overviewMonth.defaultLedgerDate())
+    val localAvailableMonths = remember(transactions) {
+        transactions.availableExpenseMonths()
     }
     var draft by remember(currentFilter, overviewMonth) {
         mutableStateOf(currentFilter.normalized(overviewMonth))
     }
+    val remoteAvailableMonths by produceState<Set<YearMonth>?>(
+        initialValue = if (remoteEnabled) null else emptySet(),
+        accessToken,
+        remoteEnabled
+    ) {
+        value = if (!remoteEnabled || accessToken.isNullOrBlank()) {
+            emptySet()
+        } else {
+            runCatching {
+                remoteClient?.fetchExpenseTransactionMonths(accessToken)
+            }.getOrElse { emptySet() }
+        }
+    }
+    val localCategoryAvailableMonths = remember(transactions, draft.categoryKey) {
+        transactions.availableExpenseMonths(draft.categoryKey)
+    }
+    val remoteCategoryAvailableMonths by produceState<Set<YearMonth>?>(
+        initialValue = if (remoteEnabled && !draft.categoryKey.isNullOrBlank()) null else emptySet(),
+        accessToken,
+        remoteEnabled,
+        draft.categoryKey
+    ) {
+        value = if (!remoteEnabled || accessToken.isNullOrBlank() || draft.categoryKey.isNullOrBlank()) {
+            emptySet()
+        } else {
+            runCatching {
+                remoteClient?.fetchExpenseTransactionMonths(
+                    accessToken = accessToken,
+                    category = draft.categoryKey
+                )
+            }.getOrElse { emptySet() }
+        }
+    }
+    val availableMonths = remember(localAvailableMonths, remoteAvailableMonths) {
+        localAvailableMonths + (remoteAvailableMonths ?: emptySet())
+    }
+    val categoryAvailableMonths = remember(localCategoryAvailableMonths, remoteCategoryAvailableMonths) {
+        localCategoryAvailableMonths + (remoteCategoryAvailableMonths ?: emptySet())
+    }
+    val categoryTransactionDates = remember(transactions, draft.categoryKey) {
+        transactions
+            .filter { transaction -> draft.categoryKey.isNullOrBlank() || transaction.category == draft.categoryKey }
+            .map { transaction -> transaction.occurredLocalDate() }
+    }
+    val (minDate, maxDate) = remember(transactionDates, availableMonths, overviewMonth) {
+        resolveFinanceLedgerDateBounds(
+            explicitDates = transactionDates,
+            availableMonths = availableMonths,
+            fallbackMonth = overviewMonth
+        )
+    }
+    val (categoryMinDate, categoryMaxDate) = remember(
+        categoryTransactionDates,
+        categoryAvailableMonths,
+        overviewMonth
+    ) {
+        resolveFinanceLedgerDateBounds(
+            explicitDates = categoryTransactionDates,
+            availableMonths = categoryAvailableMonths,
+            fallbackMonth = overviewMonth
+        )
+    }
 
-    fun pickDate(initial: LocalDate, onSelected: (LocalDate) -> Unit) {
+    LaunchedEffect(
+        availableMonths,
+        categoryAvailableMonths,
+        draft.mode,
+        draft.categoryScope,
+        draft.month,
+        draft.categoryMonth,
+        draft.categoryKey
+    ) {
+        val alignedDraft = draft.alignToAvailableMonths(
+            overviewMonth = overviewMonth,
+            availableMonths = availableMonths,
+            categoryAvailableMonths = categoryAvailableMonths
+        )
+        if (alignedDraft != draft) {
+            draft = alignedDraft
+        }
+    }
+
+    fun pickDate(
+        initial: LocalDate,
+        lowerBound: LocalDate,
+        upperBound: LocalDate,
+        onSelected: (LocalDate) -> Unit
+    ) {
         DatePickerDialog(
             context,
             { _, year, month, day ->
@@ -1107,8 +1233,8 @@ private fun FinanceExpenseLedgerFilterSheet(
             initial.monthValue - 1,
             initial.dayOfMonth
         ).apply {
-            datePicker.minDate = minDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            datePicker.maxDate = maxDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            datePicker.minDate = lowerBound.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            datePicker.maxDate = upperBound.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         }.show()
     }
 
@@ -1165,11 +1291,15 @@ private fun FinanceExpenseLedgerFilterSheet(
                 }
 
                 FinanceLedgerFilterMode.Day -> {
-                    FinanceDateValueCard(
+                    FinanceInlineValueCard(
                         label = "Choose day",
                         value = (draft.day ?: overviewMonth.defaultLedgerDate()).financeFilterDateLabel(),
                         onClick = {
-                            pickDate(draft.day ?: overviewMonth.defaultLedgerDate()) { selectedDate ->
+                            pickDate(
+                                initial = draft.day ?: overviewMonth.defaultLedgerDate(),
+                                lowerBound = minDate,
+                                upperBound = maxDate
+                            ) { selectedDate ->
                                 draft = draft.copy(day = selectedDate)
                             }
                         }
@@ -1179,9 +1309,11 @@ private fun FinanceExpenseLedgerFilterSheet(
                 FinanceLedgerFilterMode.Month -> {
                     FinanceLedgerMonthSelector(
                         label = "",
-                        selectedMonth = draft.month ?: overviewMonth,
-                        minDate = minDate,
-                        maxDate = maxDate,
+                        selectedMonth = availableMonths.closestSelectableMonth(draft.month ?: overviewMonth)
+                            ?: (draft.month ?: overviewMonth),
+                        availableMonths = availableMonths,
+                        loading = remoteEnabled && remoteAvailableMonths == null && localAvailableMonths.isEmpty(),
+                        emptyMessage = "No expense months are available yet.",
                         onSelected = { selected ->
                             draft = draft.copy(month = selected)
                         }
@@ -1221,11 +1353,15 @@ private fun FinanceExpenseLedgerFilterSheet(
 
                     when (draft.categoryScope) {
                         FinanceLedgerCategoryScope.Day -> {
-                            FinanceDateValueCard(
+                            FinanceInlineValueCard(
                                 label = "Choose day",
                                 value = (draft.categoryDay ?: overviewMonth.defaultLedgerDate()).financeFilterDateLabel(),
                                 onClick = {
-                                    pickDate(draft.categoryDay ?: overviewMonth.defaultLedgerDate()) { selectedDate ->
+                                    pickDate(
+                                        initial = draft.categoryDay ?: overviewMonth.defaultLedgerDate(),
+                                        lowerBound = categoryMinDate,
+                                        upperBound = categoryMaxDate
+                                    ) { selectedDate ->
                                         draft = draft.copy(categoryDay = selectedDate)
                                     }
                                 }
@@ -1233,15 +1369,32 @@ private fun FinanceExpenseLedgerFilterSheet(
                         }
 
                         FinanceLedgerCategoryScope.Month -> {
-                            FinanceLedgerMonthSelector(
-                                label = "",
-                                selectedMonth = draft.categoryMonth ?: overviewMonth,
-                                minDate = minDate,
-                                maxDate = maxDate,
-                                onSelected = { selected ->
-                                    draft = draft.copy(categoryMonth = selected)
+                            if (draft.categoryKey.isNullOrBlank()) {
+                                AeonCard(
+                                    variant = AeonCardVariant.Compact,
+                                    containerColor = colors.surfaceElevated
+                                ) {
+                                    Text(
+                                        text = "Pick a category first to unlock month history.",
+                                        style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
+                                    )
                                 }
-                            )
+                            } else {
+                                FinanceLedgerMonthSelector(
+                                    label = "",
+                                    selectedMonth = categoryAvailableMonths.closestSelectableMonth(
+                                        draft.categoryMonth ?: overviewMonth
+                                    ) ?: (draft.categoryMonth ?: overviewMonth),
+                                    availableMonths = categoryAvailableMonths,
+                                    loading = remoteEnabled &&
+                                        remoteCategoryAvailableMonths == null &&
+                                        localCategoryAvailableMonths.isEmpty(),
+                                    emptyMessage = "No months are available for this category yet.",
+                                    onSelected = { selected ->
+                                        draft = draft.copy(categoryMonth = selected)
+                                    }
+                                )
+                            }
                         }
 
                         FinanceLedgerCategoryScope.DateRange -> {
@@ -1253,7 +1406,11 @@ private fun FinanceExpenseLedgerFilterSheet(
                                     label = "From",
                                     value = (draft.rangeStart ?: overviewMonth.atDay(1)).financeFilterDateLabel(),
                                     onClick = {
-                                        pickDate(draft.rangeStart ?: overviewMonth.atDay(1)) { selectedDate ->
+                                        pickDate(
+                                            initial = draft.rangeStart ?: overviewMonth.atDay(1),
+                                            lowerBound = categoryMinDate,
+                                            upperBound = categoryMaxDate
+                                        ) { selectedDate ->
                                             draft = draft.copy(rangeStart = selectedDate)
                                         }
                                     },
@@ -1263,7 +1420,11 @@ private fun FinanceExpenseLedgerFilterSheet(
                                     label = "To",
                                     value = (draft.rangeEnd ?: overviewMonth.atEndOfMonth()).financeFilterDateLabel(),
                                     onClick = {
-                                        pickDate(draft.rangeEnd ?: overviewMonth.atEndOfMonth()) { selectedDate ->
+                                        pickDate(
+                                            initial = draft.rangeEnd ?: overviewMonth.atEndOfMonth(),
+                                            lowerBound = categoryMinDate,
+                                            upperBound = categoryMaxDate
+                                        ) { selectedDate ->
                                             draft = draft.copy(rangeEnd = selectedDate)
                                         }
                                     },
@@ -1328,6 +1489,41 @@ private fun FinanceFilterChip(
 }
 
 @Composable
+private fun FinanceInlineValueCard(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = AeonThemeTokens.colors
+
+    AeonCard(
+        modifier = modifier,
+        variant = AeonCardVariant.Compact,
+        onClick = onClick,
+        containerColor = colors.surfaceElevated
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = AeonTextStyles.Micro.copy(color = colors.textSecondary)
+            )
+            Text(
+                text = value,
+                style = AeonTextStyles.CardTitle.copy(
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Medium
+                )
+            )
+        }
+    }
+}
+
+@Composable
 private fun FinanceDateValueCard(
     label: String,
     value: String,
@@ -1361,23 +1557,69 @@ private fun FinanceDateValueCard(
 private fun FinanceLedgerMonthSelector(
     label: String,
     selectedMonth: YearMonth,
-    minDate: LocalDate,
-    maxDate: LocalDate,
+    availableMonths: Set<YearMonth>,
+    loading: Boolean,
+    emptyMessage: String,
     onSelected: (YearMonth) -> Unit
 ) {
-    val yearOptions = remember(minDate, maxDate) {
-        (minDate.year..maxDate.year).toList()
+    val yearOptions = remember {
+        (2020..2099).toList()
     }
-    val monthOptions = remember(selectedMonth.year, minDate, maxDate) {
-        val startMonth = if (selectedMonth.year == minDate.year) minDate.monthValue else 1
-        val endMonth = if (selectedMonth.year == maxDate.year) maxDate.monthValue else 12
-        (startMonth..endMonth).toList()
+    val monthOptions = remember {
+        (1..12).toList()
+    }
+    val enabledYears = remember(availableMonths) {
+        availableMonths.map { month -> month.year }.toSet()
+    }
+    val resolvedSelectedMonth = remember(selectedMonth, availableMonths) {
+        availableMonths.closestSelectableMonth(selectedMonth) ?: selectedMonth
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (label.isNotBlank()) {
             FinanceFilterSectionLabel(label)
         }
+        when {
+            loading && availableMonths.isEmpty() -> {
+                AeonCard(
+                    variant = AeonCardVariant.Compact,
+                    containerColor = AeonThemeTokens.colors.surfaceElevated
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = AeonThemeTokens.colors.finance
+                        )
+                        Text(
+                            text = "Loading available months...",
+                            style = AeonTextStyles.CardSubtitle.copy(
+                                color = AeonThemeTokens.colors.textSecondary
+                            )
+                        )
+                    }
+                }
+                return@Column
+            }
+
+            availableMonths.isEmpty() -> {
+                AeonCard(
+                    variant = AeonCardVariant.Compact,
+                    containerColor = AeonThemeTokens.colors.surfaceElevated
+                ) {
+                    Text(
+                        text = emptyMessage,
+                        style = AeonTextStyles.CardSubtitle.copy(color = AeonThemeTokens.colors.textSecondary)
+                    )
+                }
+                return@Column
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1386,26 +1628,30 @@ private fun FinanceLedgerMonthSelector(
             FinanceWheelPicker(
                 label = "Month",
                 options = monthOptions,
-                selectedOption = selectedMonth.monthValue.coerceIn(monthOptions.first(), monthOptions.last()),
+                selectedOption = resolvedSelectedMonth.monthValue,
                 optionLabel = { monthValue ->
                     Month.of(monthValue).getDisplayName(TextStyle.SHORT, Locale.getDefault())
                 },
                 onSelected = { monthValue ->
-                    onSelected(YearMonth.of(selectedMonth.year, monthValue))
+                    onSelected(YearMonth.of(resolvedSelectedMonth.year, monthValue))
+                },
+                isOptionEnabled = { monthValue ->
+                    availableMonths.contains(YearMonth.of(resolvedSelectedMonth.year, monthValue))
                 },
                 modifier = Modifier.weight(1f)
             )
             FinanceWheelPicker(
                 label = "Year",
                 options = yearOptions,
-                selectedOption = selectedMonth.year,
+                selectedOption = resolvedSelectedMonth.year,
                 optionLabel = { year -> year.toString() },
                 onSelected = { year ->
-                    val startMonth = if (year == minDate.year) minDate.monthValue else 1
-                    val endMonth = if (year == maxDate.year) maxDate.monthValue else 12
-                    val resolvedMonth = selectedMonth.monthValue.coerceIn(startMonth, endMonth)
-                    onSelected(YearMonth.of(year, resolvedMonth))
+                    availableMonths.closestSelectableMonthInYear(
+                        year = year,
+                        preferredMonthValue = resolvedSelectedMonth.monthValue
+                    )?.let(onSelected)
                 },
+                isOptionEnabled = { year -> enabledYears.contains(year) },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1492,7 +1738,7 @@ private fun FinanceBudgetSetupScreen(
 
     AeonScreen(
         modifier = modifier,
-        config = AeonScreenConfig(safeDrawing = true),
+        config = AeonScreenConfig(safeDrawing = true, scrollable = false),
         backgroundBrush = aeonPremiumBackgroundBrush(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1565,7 +1811,10 @@ private fun FinanceBudgetSetupScreen(
             )
         }
 
-        AeonCard(variant = AeonCardVariant.Default) {
+        AeonCard(
+            modifier = Modifier.weight(1f),
+            variant = AeonCardVariant.Default
+        ) {
             Text(
                 text = "Category budgets",
                 style = AeonTextStyles.CardTitle.copy(
@@ -1575,8 +1824,18 @@ private fun FinanceBudgetSetupScreen(
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                categoryOptions.forEach { category ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 2.dp)
+            ) {
+                items(
+                    count = categoryOptions.size,
+                    key = { index -> categoryOptions[index].key }
+                ) { index ->
+                    val category = categoryOptions[index]
                     FinanceBudgetCategoryRow(
                         category = category,
                         value = categoryBudgetValues[category].orEmpty(),
@@ -1826,10 +2085,16 @@ private fun FinanceBudgetCategoryRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = category.label,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .basicMarquee(),
                 style = AeonTextStyles.CardTitle.copy(
                     color = colors.textPrimary,
                     fontWeight = FontWeight.Medium
-                )
+                ),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip
             )
             Text(
                 text = "Monthly limit",
@@ -1859,11 +2124,16 @@ private fun FinanceBudgetMonthSheet(
 ) {
     val colors = AeonThemeTokens.colors
     val currentMonth = remember { YearMonth.now() }
-    val safeInitialMonth = remember(initialMonth, currentMonth) {
-        if (initialMonth.isBefore(currentMonth)) currentMonth else initialMonth
+    val maxBudgetMonth = remember { YearMonth.of(2099, 12) }
+    val safeInitialMonth = remember(initialMonth, currentMonth, maxBudgetMonth) {
+        when {
+            initialMonth.isBefore(currentMonth) -> currentMonth
+            initialMonth.isAfter(maxBudgetMonth) -> maxBudgetMonth
+            else -> initialMonth
+        }
     }
-    val yearOptions = remember(currentMonth, safeInitialMonth) {
-        (currentMonth.year..maxOf(currentMonth.year + 15, safeInitialMonth.year + 2)).toList()
+    val yearOptions = remember(currentMonth.year) {
+        (currentMonth.year..2099).toList()
     }
     var selectedYear by rememberSaveable(safeInitialMonth.toString()) {
         mutableStateOf(safeInitialMonth.year)
@@ -1872,74 +2142,118 @@ private fun FinanceBudgetMonthSheet(
         mutableStateOf(safeInitialMonth.monthValue)
     }
     val monthOptions = remember(selectedYear, currentMonth) {
-        if (selectedYear == currentMonth.year) {
-            (currentMonth.monthValue..12).toList()
-        } else {
-            (1..12).toList()
-        }
+        val startMonth = if (selectedYear == currentMonth.year) currentMonth.monthValue else 1
+        (startMonth..12).toList()
+    }
+    val selectedBudgetMonth = remember(selectedYear, selectedMonthValue) {
+        YearMonth.of(selectedYear, selectedMonthValue)
+    }
+    val isSelectionValid = remember(selectedBudgetMonth, currentMonth, maxBudgetMonth) {
+        !selectedBudgetMonth.isBefore(currentMonth) && !selectedBudgetMonth.isAfter(maxBudgetMonth)
     }
 
-    LaunchedEffect(monthOptions) {
-        if (selectedMonthValue !in monthOptions) {
-            selectedMonthValue = monthOptions.first()
+    LaunchedEffect(selectedYear, selectedMonthValue, currentMonth, maxBudgetMonth) {
+        when {
+            selectedYear < currentMonth.year -> {
+                selectedYear = currentMonth.year
+                selectedMonthValue = currentMonth.monthValue
+            }
+
+            selectedYear > maxBudgetMonth.year -> {
+                selectedYear = maxBudgetMonth.year
+                selectedMonthValue = selectedMonthValue.coerceAtMost(maxBudgetMonth.monthValue)
+            }
+
+            selectedMonthValue !in monthOptions -> {
+                selectedMonthValue = monthOptions.first()
+            }
+
+            selectedBudgetMonth.isAfter(maxBudgetMonth) -> {
+                selectedMonthValue = maxBudgetMonth.monthValue
+            }
         }
     }
 
     AeonBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Row(
+            Text(
+                text = "Choose budget month",
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                textAlign = TextAlign.Center,
+                style = AeonTextStyles.SectionTitle.copy(
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            )
+
+            Text(
+                text = "Pick when this budget should start.",
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(colors.surfaceElevated.copy(alpha = 0.92f))
+                    .padding(horizontal = 14.dp, vertical = 18.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Choose budget month",
-                        style = AeonTextStyles.SectionTitle.copy(color = colors.textPrimary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    FinanceWheelPicker(
+                        label = "Month",
+                        options = monthOptions,
+                        selectedOption = selectedMonthValue,
+                        optionLabel = { monthValue ->
+                            Month.of(monthValue).getDisplayName(TextStyle.FULL, Locale.getDefault())
+                        },
+                        onSelected = { selectedMonthValue = it },
+                        modifier = Modifier.weight(1f)
                     )
-                    Text(
-                        text = "Only the current month and future months are available.",
-                        style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
+                    FinanceWheelPicker(
+                        label = "Year",
+                        options = yearOptions,
+                        selectedOption = selectedYear,
+                        optionLabel = { year -> year.toString() },
+                        onSelected = { selectedYear = it },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            Row(
+            Text(
+                text = "Only the current month and future months are available.",
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                FinanceWheelPicker(
-                    label = "Month",
-                    options = monthOptions,
-                    selectedOption = selectedMonthValue,
-                    optionLabel = { monthValue ->
-                        Month.of(monthValue).getDisplayName(TextStyle.SHORT, Locale.getDefault())
-                    },
-                    onSelected = { selectedMonthValue = it },
-                    modifier = Modifier.weight(1f)
-                )
-                FinanceWheelPicker(
-                    label = "Year",
-                    options = yearOptions,
-                    selectedOption = selectedYear,
-                    optionLabel = { year -> year.toString() },
-                    onSelected = { selectedYear = it },
-                    modifier = Modifier.weight(1f)
-                )
-            }
+                textAlign = TextAlign.Center,
+                style = AeonTextStyles.Micro.copy(color = colors.textSecondary)
+            )
 
             AeonButton(
-                text = "Continue",
+                text = "Confirm",
                 onClick = {
-                    onMonthSelected(YearMonth.of(selectedYear, selectedMonthValue))
+                    if (isSelectionValid) {
+                        onMonthSelected(selectedBudgetMonth)
+                    }
                 },
                 variant = AeonButtonVariant.Primary,
                 size = AeonButtonSize.Medium,
-                fullWidth = true
+                enabled = isSelectionValid,
+                fullWidth = true,
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             )
         }
     }
@@ -1952,6 +2266,7 @@ private fun <T> FinanceWheelPicker(
     selectedOption: T,
     optionLabel: (T) -> String,
     onSelected: (T) -> Unit,
+    isOptionEnabled: (T) -> Boolean = { true },
     modifier: Modifier = Modifier
 ) {
     val colors = AeonThemeTokens.colors
@@ -1961,6 +2276,8 @@ private fun <T> FinanceWheelPicker(
     val itemHeightPx = with(LocalDensity.current) { itemHeight.roundToPx() }
     val selectedIndex = options.indexOf(selectedOption).coerceAtLeast(0)
     val latestSelectedOption by rememberUpdatedState(selectedOption)
+    val latestOnSelected by rememberUpdatedState(onSelected)
+    val latestIsOptionEnabled by rememberUpdatedState(isOptionEnabled)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
@@ -1989,6 +2306,25 @@ private fun <T> FinanceWheelPicker(
         }
     }
 
+    fun nearestEnabledIndex(startIndex: Int): Int {
+        if (options.isEmpty()) return 0
+        if (latestIsOptionEnabled(options[startIndex])) return startIndex
+
+        for (index in startIndex + 1..options.lastIndex) {
+            if (latestIsOptionEnabled(options[index])) {
+                return index
+            }
+        }
+
+        for (index in startIndex - 1 downTo 0) {
+            if (latestIsOptionEnabled(options[index])) {
+                return index
+            }
+        }
+
+        return startIndex.coerceIn(0, options.lastIndex)
+    }
+
     LaunchedEffect(options, selectedOption) {
         val targetIndex = options.indexOf(selectedOption).coerceAtLeast(0)
         if (listState.firstVisibleItemIndex != targetIndex || listState.firstVisibleItemScrollOffset != 0) {
@@ -1996,7 +2332,7 @@ private fun <T> FinanceWheelPicker(
         }
     }
 
-    LaunchedEffect(listState, options) {
+    LaunchedEffect(listState, options, isOptionEnabled) {
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
             .collectLatest { isScrolling ->
@@ -2006,8 +2342,16 @@ private fun <T> FinanceWheelPicker(
                         firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
                     )
                     options.getOrNull(resolvedIndex)?.let { option ->
-                        if (option != latestSelectedOption) {
-                            onSelected(option)
+                        if (!latestIsOptionEnabled(option)) {
+                            val fallbackIndex = nearestEnabledIndex(resolvedIndex)
+                            if (
+                                fallbackIndex != resolvedIndex ||
+                                listState.firstVisibleItemScrollOffset != 0
+                            ) {
+                                listState.animateScrollToItem(fallbackIndex)
+                            }
+                        } else if (option != latestSelectedOption) {
+                            latestOnSelected(option)
                         }
                     }
                 }
@@ -2056,7 +2400,9 @@ private fun <T> FinanceWheelPicker(
                         Text(
                             text = optionLabel(options[index]),
                             style = AeonTextStyles.CardTitle.copy(
-                                color = if (options[index] == selectedOption) {
+                                color = if (!latestIsOptionEnabled(options[index])) {
+                                    colors.textSecondary.copy(alpha = 0.34f)
+                                } else if (options[index] == selectedOption) {
                                     colors.textPrimary
                                 } else {
                                     colors.textSecondary
@@ -2165,13 +2511,20 @@ private fun FinanceLedgerCategoryTile(
             }
             Text(
                 text = category.label,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .basicMarquee(
+                        iterations = Int.MAX_VALUE,
+                        animationMode = MarqueeAnimationMode.Immediately,
+                        repeatDelayMillis = 2_000
+                    ),
                 style = AeonTextStyles.CardTitle.copy(
                     color = colors.textPrimary,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
                 ),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip
             )
         }
     }
@@ -2204,7 +2557,6 @@ private fun FinanceQuickEntryFab(
 @Composable
 private fun FinanceEntryModeSheet(
     title: String,
-    subtitle: String,
     showManualModes: Boolean,
     onDismiss: () -> Unit,
     onManualExpense: () -> Unit,
@@ -2221,29 +2573,10 @@ private fun FinanceEntryModeSheet(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = AeonTextStyles.SectionTitle.copy(color = colors.textPrimary)
-                    )
-                    Text(
-                        text = subtitle,
-                        style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
-                    )
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "Close finance modes",
-                        tint = colors.textSecondary
-                    )
-                }
-            }
+            Text(
+                text = title,
+                style = AeonTextStyles.SectionTitle.copy(color = colors.textPrimary)
+            )
 
             if (showManualModes) {
                 FinanceEntryModeAction(
@@ -3369,6 +3702,27 @@ private fun FinanceLedgerFilter.normalized(
     )
 }
 
+private fun FinanceLedgerFilter.alignToAvailableMonths(
+    overviewMonth: YearMonth,
+    availableMonths: Set<YearMonth>,
+    categoryAvailableMonths: Set<YearMonth>
+): FinanceLedgerFilter {
+    val normalizedFilter = normalized(overviewMonth)
+
+    return normalizedFilter.copy(
+        month = if (availableMonths.isEmpty()) {
+            normalizedFilter.month
+        } else {
+            availableMonths.closestSelectableMonth(normalizedFilter.month ?: overviewMonth)
+        },
+        categoryMonth = if (categoryAvailableMonths.isEmpty()) {
+            normalizedFilter.categoryMonth
+        } else {
+            categoryAvailableMonths.closestSelectableMonth(normalizedFilter.categoryMonth ?: overviewMonth)
+        }
+    )
+}
+
 private fun FinanceLedgerFilter.filterTransactions(
     transactions: List<FinanceTransactionEntity>,
     overviewMonth: YearMonth
@@ -3455,6 +3809,50 @@ private fun FinanceLedgerFilter.title(
     }
 }
 
+private fun FinanceLedgerFilter.toRemoteTransactionQuery(
+    overviewMonth: YearMonth
+): FinanceRemoteTransactionQuery {
+    val filter = normalized(overviewMonth)
+
+    return when (filter.mode) {
+        FinanceLedgerFilterMode.OverviewMonth -> FinanceRemoteTransactionQuery(
+            transactionType = FinanceTransactionTypeStorage.Expense,
+            month = overviewMonth.toString()
+        )
+
+        FinanceLedgerFilterMode.Day -> FinanceRemoteTransactionQuery(
+            transactionType = FinanceTransactionTypeStorage.Expense,
+            day = filter.day?.toString()
+        )
+
+        FinanceLedgerFilterMode.Month -> FinanceRemoteTransactionQuery(
+            transactionType = FinanceTransactionTypeStorage.Expense,
+            month = filter.month?.toString()
+        )
+
+        FinanceLedgerFilterMode.Category -> when (filter.categoryScope) {
+            FinanceLedgerCategoryScope.Day -> FinanceRemoteTransactionQuery(
+                transactionType = FinanceTransactionTypeStorage.Expense,
+                category = filter.categoryKey,
+                day = filter.categoryDay?.toString()
+            )
+
+            FinanceLedgerCategoryScope.Month -> FinanceRemoteTransactionQuery(
+                transactionType = FinanceTransactionTypeStorage.Expense,
+                category = filter.categoryKey,
+                month = filter.categoryMonth?.toString()
+            )
+
+            FinanceLedgerCategoryScope.DateRange -> FinanceRemoteTransactionQuery(
+                transactionType = FinanceTransactionTypeStorage.Expense,
+                category = filter.categoryKey,
+                from = filter.rangeStart?.toFinanceQueryStart(),
+                to = filter.rangeEnd?.toFinanceQueryEnd()
+            )
+        }
+    }
+}
+
 private fun newFinanceEntryDraft(
     mode: FinanceImportSource = FinanceImportSource.Manual,
     transactionType: String = FinanceTransactionTypeStorage.Expense,
@@ -3472,6 +3870,112 @@ private fun newFinanceEntryDraft(
         accountId = accountId,
         paymentMethod = "UPI"
     )
+}
+
+private fun mergeFinanceCategoryOptions(
+    local: List<FinanceCategoryOption>,
+    remote: List<FinanceCategoryOption>
+): List<FinanceCategoryOption> {
+    if (remote.isEmpty()) return local
+
+    val merged = LinkedHashMap<String, FinanceCategoryOption>()
+    local.forEach { option ->
+        merged[option.key] = option
+    }
+    remote.forEach { option ->
+        merged[option.key] = merged[option.key]?.copy(
+            label = merged[option.key]?.label?.ifBlank { option.label } ?: option.label,
+            iconKey = merged[option.key]?.iconKey?.ifBlank { option.iconKey } ?: option.iconKey,
+            familyKey = merged[option.key]?.familyKey?.ifBlank { option.familyKey } ?: option.familyKey,
+            scope = merged[option.key]?.scope?.ifBlank { option.scope } ?: option.scope,
+            isDefault = (merged[option.key]?.isDefault == true) || option.isDefault
+        ) ?: option
+    }
+
+    return merged.values.toList()
+}
+
+private fun mergeFinanceTransactions(
+    local: List<FinanceTransactionEntity>,
+    remote: List<FinanceTransactionEntity>
+): List<FinanceTransactionEntity> {
+    if (remote.isEmpty()) return local.sortedByDescending { transaction -> transaction.occurredAt }
+
+    val merged = LinkedHashMap<String, FinanceTransactionEntity>()
+    local.forEach { transaction ->
+        merged[transaction.id] = transaction
+    }
+    remote.forEach { transaction ->
+        merged[transaction.id] = transaction
+    }
+
+    return merged.values.sortedByDescending { transaction -> transaction.occurredAt }
+}
+
+private fun List<FinanceTransactionEntity>.availableExpenseMonths(
+    categoryKey: String? = null
+): Set<YearMonth> {
+    return asSequence()
+        .filter { transaction ->
+            transaction.transactionType == FinanceTransactionTypeStorage.Expense &&
+                (categoryKey.isNullOrBlank() || transaction.category == categoryKey)
+        }
+        .map { transaction -> YearMonth.from(transaction.occurredLocalDate()) }
+        .toSet()
+}
+
+private fun resolveFinanceLedgerDateBounds(
+    explicitDates: List<LocalDate>,
+    availableMonths: Set<YearMonth>,
+    fallbackMonth: YearMonth
+): Pair<LocalDate, LocalDate> {
+    val fallbackDate = fallbackMonth.defaultLedgerDate()
+    val minCandidates = listOfNotNull(
+        explicitDates.minOrNull(),
+        availableMonths.minOrNull()?.atDay(1)
+    ).ifEmpty { listOf(fallbackDate) }
+    val maxCandidates = listOfNotNull(
+        explicitDates.maxOrNull(),
+        availableMonths.maxOrNull()?.atEndOfMonth()
+    ).ifEmpty { listOf(fallbackDate) }
+    val minDate = minCandidates.minOrNull() ?: fallbackDate
+    val maxDate = maxCandidates.maxOrNull() ?: fallbackDate
+
+    return minDate to maxDate
+}
+
+private fun Set<YearMonth>.closestSelectableMonth(
+    preferred: YearMonth
+): YearMonth? {
+    if (isEmpty()) return null
+
+    val orderedMonths = toList().sorted()
+    return orderedMonths.firstOrNull { month -> month >= preferred } ?: orderedMonths.last()
+}
+
+private fun Set<YearMonth>.closestSelectableMonthInYear(
+    year: Int,
+    preferredMonthValue: Int
+): YearMonth? {
+    val yearMonths = asSequence()
+        .filter { month -> month.year == year }
+        .sorted()
+        .toList()
+
+    if (yearMonths.isEmpty()) return null
+
+    return yearMonths.firstOrNull { month -> month.monthValue >= preferredMonthValue } ?: yearMonths.last()
+}
+
+private fun LocalDate.toFinanceQueryStart(): String {
+    return atStartOfDay(ZoneId.systemDefault()).toInstant().toString()
+}
+
+private fun LocalDate.toFinanceQueryEnd(): String {
+    return atTime(23, 59, 59, 999_000_000)
+        .atZone(ZoneId.systemDefault())
+        .toInstant()
+        .toString()
 }
 
 private fun applyFinanceImportResult(

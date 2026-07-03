@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aeon.app.data.local.database.entities.AeonSettingsEntity
+import com.aeon.app.data.local.database.entities.AeonInsightEntity
 import com.aeon.app.data.local.database.entities.BudgetEntity
 import com.aeon.app.data.local.database.entities.FinanceAccountEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
+import com.aeon.app.data.local.database.entities.FocusSessionEntity
 import com.aeon.app.data.local.database.entities.FocusRoutineItemEntity
 import com.aeon.app.data.local.database.entities.FocusRoutineOccurrenceEntity
 import com.aeon.app.data.local.database.entities.FocusRoutineTemplateEntity
@@ -50,6 +52,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
+import java.time.ZoneId
 
 /*
  * AEON VIEWMODELS
@@ -1226,6 +1229,274 @@ class AeonHealthViewModel(
 
 
 // ----------------------------------------------------
+// Track
+// ----------------------------------------------------
+
+data class TrackViewState(
+    val isLoading: Boolean = true,
+    val today: LocalDate = LocalDate.now(),
+    val rangeStart: LocalDate = LocalDate.now().minusDays(6),
+    val rangeEnd: LocalDate = LocalDate.now(),
+    val currentFocusSessions: List<FocusSessionEntity> = emptyList(),
+    val previousFocusSessions: List<FocusSessionEntity> = emptyList(),
+    val activeHabits: List<HabitEntity> = emptyList(),
+    val currentHabitLogs: List<HabitLogEntity> = emptyList(),
+    val previousHabitLogs: List<HabitLogEntity> = emptyList(),
+    val currentMoodEntries: List<MoodEntryEntity> = emptyList(),
+    val previousMoodEntries: List<MoodEntryEntity> = emptyList(),
+    val activeGoals: List<GoalEntity> = emptyList(),
+    val upcomingMilestones: List<GoalMilestoneEntity> = emptyList(),
+    val currentHealthEntries: List<HealthEntryEntity> = emptyList(),
+    val previousHealthEntries: List<HealthEntryEntity> = emptyList(),
+    val currentDoseLogs: List<MedicineDoseLogEntity> = emptyList(),
+    val previousDoseLogs: List<MedicineDoseLogEntity> = emptyList(),
+    val activeMedicines: List<MedicineEntity> = emptyList(),
+    val currentTransactions: List<FinanceTransactionEntity> = emptyList(),
+    val previousTransactions: List<FinanceTransactionEntity> = emptyList(),
+    val currentMonthTransactions: List<FinanceTransactionEntity> = emptyList(),
+    val budgets: List<BudgetEntity> = emptyList(),
+    val insights: List<AeonInsightEntity> = emptyList(),
+    val error: String? = null
+)
+
+private data class TrackFocusBundle(
+    val currentSessions: List<FocusSessionEntity>,
+    val previousSessions: List<FocusSessionEntity>
+)
+
+private data class TrackHabitBundle(
+    val activeHabits: List<HabitEntity>,
+    val currentLogs: List<HabitLogEntity>,
+    val previousLogs: List<HabitLogEntity>
+)
+
+private data class TrackMoodBundle(
+    val currentEntries: List<MoodEntryEntity>,
+    val previousEntries: List<MoodEntryEntity>
+)
+
+private data class TrackGoalBundle(
+    val activeGoals: List<GoalEntity>,
+    val upcomingMilestones: List<GoalMilestoneEntity>
+)
+
+private data class TrackHealthBundle(
+    val currentEntries: List<HealthEntryEntity>,
+    val previousEntries: List<HealthEntryEntity>,
+    val currentDoseLogs: List<MedicineDoseLogEntity>,
+    val previousDoseLogs: List<MedicineDoseLogEntity>,
+    val activeMedicines: List<MedicineEntity>
+)
+
+private data class TrackFinanceBundle(
+    val currentTransactions: List<FinanceTransactionEntity>,
+    val previousTransactions: List<FinanceTransactionEntity>,
+    val currentMonthTransactions: List<FinanceTransactionEntity>,
+    val budgets: List<BudgetEntity>
+)
+
+private data class TrackPrimaryBundle(
+    val focus: TrackFocusBundle,
+    val habits: TrackHabitBundle,
+    val mood: TrackMoodBundle,
+    val goals: TrackGoalBundle
+)
+
+private data class TrackSecondaryBundle(
+    val health: TrackHealthBundle,
+    val finance: TrackFinanceBundle,
+    val insights: List<AeonInsightEntity>
+)
+
+class AeonTrackViewModel(
+    private val repositories: AeonRepositories
+) : AeonBaseViewModel() {
+
+    private val today = LocalDate.now()
+    private val rangeStart = today.minusDays(6)
+    private val previousRangeStart = rangeStart.minusDays(7)
+    private val previousRangeEnd = rangeStart.minusDays(1)
+    private val currentMonth = YearMonth.from(today)
+    private val currentMonthStart = currentMonth.atDay(1)
+    private val currentMonthEnd = currentMonth.atEndOfMonth()
+
+    private val initialState = TrackViewState(
+        today = today,
+        rangeStart = rangeStart,
+        rangeEnd = today
+    )
+
+    private val _uiState = MutableStateFlow(initialState)
+    val uiState = _uiState.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = initialState
+    )
+
+    init {
+        viewModelScope.launch {
+            val focusFlow = combine(
+                repositories.focus.observeSessionsBetween(rangeStart, today),
+                repositories.focus.observeSessionsBetween(previousRangeStart, previousRangeEnd)
+            ) { currentSessions, previousSessions ->
+                TrackFocusBundle(
+                    currentSessions = currentSessions,
+                    previousSessions = previousSessions
+                )
+            }
+
+            val habitFlow = combine(
+                repositories.habits.observeActiveHabits(),
+                repositories.habits.observeLogsBetween(rangeStart, today),
+                repositories.habits.observeLogsBetween(previousRangeStart, previousRangeEnd)
+            ) { activeHabits, currentLogs, previousLogs ->
+                TrackHabitBundle(
+                    activeHabits = activeHabits,
+                    currentLogs = currentLogs,
+                    previousLogs = previousLogs
+                )
+            }
+
+            val moodFlow = combine(
+                repositories.mood.observeEntriesBetween(rangeStart, today),
+                repositories.mood.observeEntriesBetween(previousRangeStart, previousRangeEnd)
+            ) { currentEntries, previousEntries ->
+                TrackMoodBundle(
+                    currentEntries = currentEntries,
+                    previousEntries = previousEntries
+                )
+            }
+
+            val goalFlow = combine(
+                repositories.goals.observeActiveGoals(),
+                repositories.goals.observeUpcomingMilestones()
+            ) { activeGoals, upcomingMilestones ->
+                TrackGoalBundle(
+                    activeGoals = activeGoals,
+                    upcomingMilestones = upcomingMilestones
+                )
+            }
+
+            val healthFlow = combine(
+                repositories.health.observeEntriesBetween(rangeStart, today),
+                repositories.health.observeEntriesBetween(previousRangeStart, previousRangeEnd),
+                repositories.health.observeDoseLogsBetween(rangeStart, today),
+                repositories.health.observeDoseLogsBetween(previousRangeStart, previousRangeEnd),
+                repositories.health.observeActiveMedicines()
+            ) { currentEntries, previousEntries, currentDoseLogs, previousDoseLogs, activeMedicines ->
+                TrackHealthBundle(
+                    currentEntries = currentEntries,
+                    previousEntries = previousEntries,
+                    currentDoseLogs = currentDoseLogs,
+                    previousDoseLogs = previousDoseLogs,
+                    activeMedicines = activeMedicines
+                )
+            }
+
+            val financeFlow = combine(
+                repositories.finance.observeTransactionsBetween(
+                    start = rangeStart.startOfDayInstant(),
+                    end = today.endOfDayInstant()
+                ),
+                repositories.finance.observeTransactionsBetween(
+                    start = previousRangeStart.startOfDayInstant(),
+                    end = previousRangeEnd.endOfDayInstant()
+                ),
+                repositories.finance.observeTransactionsBetween(
+                    start = currentMonthStart.startOfDayInstant(),
+                    end = currentMonthEnd.endOfDayInstant()
+                ),
+                repositories.finance.observeActiveBudgets()
+            ) { currentTransactions, previousTransactions, currentMonthTransactions, budgets ->
+                TrackFinanceBundle(
+                    currentTransactions = currentTransactions,
+                    previousTransactions = previousTransactions,
+                    currentMonthTransactions = currentMonthTransactions,
+                    budgets = budgets
+                )
+            }
+
+            val primaryFlow = combine(
+                focusFlow,
+                habitFlow,
+                moodFlow,
+                goalFlow
+            ) { focus, habits, mood, goals ->
+                TrackPrimaryBundle(
+                    focus = focus,
+                    habits = habits,
+                    mood = mood,
+                    goals = goals
+                )
+            }
+
+            val secondaryFlow = combine(
+                healthFlow,
+                financeFlow,
+                repositories.insights.observeNewInsights(limit = 6)
+            ) { health, finance, insights ->
+                TrackSecondaryBundle(
+                    health = health,
+                    finance = finance,
+                    insights = insights
+                )
+            }
+
+            combine(primaryFlow, secondaryFlow) { primary, secondary ->
+                TrackViewState(
+                    isLoading = false,
+                    today = today,
+                    rangeStart = rangeStart,
+                    rangeEnd = today,
+                    currentFocusSessions = primary.focus.currentSessions,
+                    previousFocusSessions = primary.focus.previousSessions,
+                    activeHabits = primary.habits.activeHabits,
+                    currentHabitLogs = primary.habits.currentLogs,
+                    previousHabitLogs = primary.habits.previousLogs,
+                    currentMoodEntries = primary.mood.currentEntries,
+                    previousMoodEntries = primary.mood.previousEntries,
+                    activeGoals = primary.goals.activeGoals,
+                    upcomingMilestones = primary.goals.upcomingMilestones,
+                    currentHealthEntries = secondary.health.currentEntries,
+                    previousHealthEntries = secondary.health.previousEntries,
+                    currentDoseLogs = secondary.health.currentDoseLogs,
+                    previousDoseLogs = secondary.health.previousDoseLogs,
+                    activeMedicines = secondary.health.activeMedicines,
+                    currentTransactions = secondary.finance.currentTransactions,
+                    previousTransactions = secondary.finance.previousTransactions,
+                    currentMonthTransactions = secondary.finance.currentMonthTransactions,
+                    budgets = secondary.finance.budgets,
+                    insights = secondary.insights
+                )
+            }
+                .catch { throwable ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = throwable.message ?: "Unable to load track."
+                        )
+                    }
+                }
+                .collect { state ->
+                    _uiState.value = state
+                }
+        }
+    }
+}
+
+private fun LocalDate.startOfDayInstant(): Instant {
+    return atStartOfDay(ZoneId.systemDefault()).toInstant()
+}
+
+private fun LocalDate.endOfDayInstant(): Instant {
+    return plusDays(1)
+        .atStartOfDay(ZoneId.systemDefault())
+        .minusNanos(1)
+        .toInstant()
+}
+
+
+// ----------------------------------------------------
 // Settings
 // ----------------------------------------------------
 
@@ -1369,6 +1640,10 @@ class AeonViewModelFactory(
 
             modelClass.isAssignableFrom(AeonHealthViewModel::class.java) -> {
                 AeonHealthViewModel(useCases, repositories)
+            }
+
+            modelClass.isAssignableFrom(AeonTrackViewModel::class.java) -> {
+                AeonTrackViewModel(repositories)
             }
 
             modelClass.isAssignableFrom(AeonSettingsViewModel::class.java) -> {

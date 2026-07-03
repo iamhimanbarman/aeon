@@ -13,6 +13,7 @@ import {
   listFinanceAccounts,
   listFinanceBudgets,
   listFinanceCategories,
+  listFinanceTransactionMonths,
   listFinanceTransactions,
   setFinanceBudgetsForMonth
 } from "./repository.js";
@@ -22,6 +23,7 @@ import {
   financeCategoryInputSchema,
   financeSetMonthBudgetSchema,
   financeTransactionInputSchema,
+  financeTransactionMonthsQuerySchema,
   financeTransactionQuerySchema
 } from "./schemas.js";
 
@@ -57,6 +59,11 @@ export async function registerFinanceRoutes(app: FastifyInstance): Promise<void>
   app.get("/transactions", { preHandler: app.authenticate }, async (request) => {
     const query = parseWithSchema(financeTransactionQuerySchema, request.query, "Invalid finance transaction query.");
     return listFinanceTransactions(app.db, request.authUser!.userId, query);
+  });
+
+  app.get("/transaction-months", { preHandler: app.authenticate }, async (request) => {
+    const query = parseWithSchema(financeTransactionMonthsQuerySchema, request.query, "Invalid finance transaction month query.");
+    return listFinanceTransactionMonths(app.db, request.authUser!.userId, query);
   });
 
   app.get("/transactions/:transactionId", { preHandler: app.authenticate }, async (request) => {

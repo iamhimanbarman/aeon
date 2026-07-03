@@ -131,11 +131,7 @@ class DefaultAeonAppContainer(
         useCases.initializeDefaults()
         repositories.finance.ensureDefaultCategories()
         AeonSeedData.removeDemoData(database)
-        AeonSeedData.seedIfNeeded(
-            database = database,
-            includeDemoData = false,
-            force = false
-        )
+        AeonSeedData.seedProductionDefaultsIfNeeded(database)
     }
 
     override fun close() {
@@ -194,11 +190,7 @@ class PreviewAeonAppContainer(
         useCases.initializeDefaults()
         repositories.finance.ensureDefaultCategories()
         AeonSeedData.removeDemoData(database)
-        AeonSeedData.seedIfNeeded(
-            database = database,
-            includeDemoData = false,
-            force = false
-        )
+        AeonSeedData.seedProductionDefaultsIfNeeded(database)
     }
 
     override fun close() {

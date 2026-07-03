@@ -11,6 +11,7 @@ import type {
   financeCategoryInputSchema,
   financeSetMonthBudgetSchema,
   financeTransactionInputSchema,
+  financeTransactionMonthsQuerySchema,
   financeTransactionQuerySchema
 } from "./schemas.js";
 
@@ -18,6 +19,7 @@ type FinanceCategoryInput = z.infer<typeof financeCategoryInputSchema>;
 type FinanceAccountInput = z.infer<typeof financeAccountInputSchema>;
 type FinanceTransactionInput = z.infer<typeof financeTransactionInputSchema>;
 type FinanceSetMonthBudgetInput = z.infer<typeof financeSetMonthBudgetSchema>;
+type FinanceTransactionMonthsQuery = z.infer<typeof financeTransactionMonthsQuerySchema>;
 type FinanceTransactionQuery = z.infer<typeof financeTransactionQuerySchema>;
 type FinanceBudgetQuery = z.infer<typeof financeBudgetQuerySchema>;
 
@@ -237,6 +239,42 @@ export async function listFinanceTransactions(
   );
 
   return camelizeRows(rows);
+}
+
+export async function listFinanceTransactionMonths(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  query: FinanceTransactionMonthsQuery
+) {
+  await ensureFinanceDefaults(db, userId);
+
+  const values: unknown[] = [userId, query.transactionType];
+  const conditions = [
+    "user_id = $1::uuid",
+    "deleted_at is null",
+    "transaction_type = $2"
+  ];
+
+  if (query.category) {
+    values.push(query.category);
+    conditions.push(`category = $${values.length}`);
+  }
+
+  const rows = await db.unsafe<{ month_key: string }[]>(
+    `
+      select distinct to_char(date_trunc('month', occurred_at at time zone 'utc'), 'YYYY-MM') as month_key
+      from finance_transactions
+      where ${conditions.join(" and ")}
+      order by month_key asc
+    `,
+    values
+  );
+
+  return {
+    months: rows
+      .map((row) => row.month_key)
+      .filter((monthKey): monthKey is string => typeof monthKey === "string" && monthKey.length === 7)
+  };
 }
 
 export async function getFinanceTransaction(db: Sql<Record<string, unknown>>, userId: string, transactionId: string) {

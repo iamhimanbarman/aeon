@@ -600,6 +600,18 @@ interface HabitDao {
     @Query(
         """
         SELECT * FROM habit_logs
+        WHERE log_date BETWEEN :startDate AND :endDate
+        ORDER BY log_date DESC, created_at DESC
+        """
+    )
+    fun observeHabitLogsBetween(
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): Flow<List<HabitLogEntity>>
+
+    @Query(
+        """
+        SELECT * FROM habit_logs
         WHERE log_date = :date
         ORDER BY created_at DESC
         """

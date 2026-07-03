@@ -32,7 +32,7 @@ fun AeonBottomSheet(
         sheetState = sheetState,
         modifier = modifier,
         shape = AeonBottomSheetTokens.Shape,
-        containerColor = AeonThemeTokens.colors.surface,
+        containerColor = AeonThemeTokens.colors.backgroundAlt,
         contentColor = AeonThemeTokens.colors.textPrimary,
         scrimColor = AeonThemeTokens.colors.scrim,
         tonalElevation = AeonBottomSheetTokens.Elevation,
@@ -46,7 +46,10 @@ fun AeonBottomSheet(
                     modifier = Modifier
                         .width(AeonBottomSheetTokens.DragHandleWidth)
                         .height(AeonBottomSheetTokens.DragHandleHeight)
-                        .background(AeonThemeTokens.colors.border, shape = AeonBottomSheetTokens.Shape)
+                        .background(
+                            AeonThemeTokens.colors.surfaceHigh.copy(alpha = 0.92f),
+                            shape = AeonBottomSheetTokens.Shape
+                        )
                 )
                 Spacer(modifier = Modifier.height(AeonBottomSheetTokens.DragHandleToContentGap))
             }

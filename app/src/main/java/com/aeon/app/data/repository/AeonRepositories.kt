@@ -443,6 +443,16 @@ class FocusRepository(
         )
     }
 
+    fun observeSessionsBetween(
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): Flow<List<FocusSessionEntity>> {
+        return dao.observeFocusSessionsBetween(
+            start = startDate.startOfDayInstant(),
+            end = endDate.endOfDayInstant()
+        )
+    }
+
     fun observeFocusMinutesForDay(
         date: LocalDate = LocalDate.now()
     ): Flow<Int> {
@@ -527,6 +537,13 @@ class HabitRepository(
         endDate: LocalDate
     ): Flow<List<HabitLogEntity>> {
         return dao.observeHabitLogs(habitId, startDate, endDate)
+    }
+
+    fun observeLogsBetween(
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): Flow<List<HabitLogEntity>> {
+        return dao.observeHabitLogsBetween(startDate, endDate)
     }
 
     fun observeTodayLogs(
@@ -1089,6 +1106,16 @@ class HealthRepository(
         return dao.observeDoseLogsBetween(
             start = date.startOfDayInstant(),
             end = date.endOfDayInstant()
+        )
+    }
+
+    fun observeDoseLogsBetween(
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): Flow<List<MedicineDoseLogEntity>> {
+        return dao.observeDoseLogsBetween(
+            start = startDate.startOfDayInstant(),
+            end = endDate.endOfDayInstant()
         )
     }
 

@@ -69,7 +69,8 @@ import java.util.UUID
  *
  * Recommended production behavior:
  * - Always seed default settings.
- * - Seed demo data only for debug builds, onboarding demo mode, or previews.
+ * - Never pre-seed notification history.
+ * - Seed demo data only through an explicit preview/debug flow.
  */
 
 
@@ -110,9 +111,20 @@ private const val SEED_GROUP_KEY = "system"
 
 object AeonSeedData {
 
+    suspend fun seedProductionDefaultsIfNeeded(
+        database: AeonDatabase,
+        force: Boolean = false
+    ): AeonSeedResult {
+        return seedIfNeeded(
+            database = database,
+            includeDemoData = false,
+            force = force
+        )
+    }
+
     suspend fun seedIfNeeded(
         database: AeonDatabase,
-        includeDemoData: Boolean = true,
+        includeDemoData: Boolean = false,
         force: Boolean = false
     ): AeonSeedResult {
         val settingsDao = database.aeonSettingsDao()
@@ -160,7 +172,7 @@ object AeonSeedData {
             val accounts = buildFinanceAccounts(now)
             val transactions = buildFinanceTransactions(now)
             val budgets = buildBudgets(now, today)
-            val notifications = buildNotifications(now)
+            val notifications = emptyList<NotificationEntity>()
             val insights = buildInsights(now)
 
             database.goalDao().upsertGoals(goals)

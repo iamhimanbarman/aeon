@@ -96,51 +96,6 @@ private enum class AuthStep {
 }
 
 @Composable
-fun AeonAuthLoadingScreen() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        AeonThemeTokens.colors.background,
-                        AeonThemeTokens.colors.backgroundAlt,
-                        AeonThemeTokens.colors.surfaceElevated
-                    )
-                )
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(AeonSpacing.Medium)
-        ) {
-            Surface(
-                modifier = Modifier.size(92.dp),
-                shape = CircleShape,
-                color = Color.White.copy(alpha = 0.08f),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    Color.White.copy(alpha = 0.18f)
-                )
-            ) {
-                Image(
-                    painter = painterResource(id = R.mipmap.ic_launcher),
-                    contentDescription = "Aeon logo",
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
-
-            Text(
-                text = "Preparing your secure workspace",
-                style = AeonTextStyles.SectionTitle,
-                color = AeonThemeTokens.colors.textPrimary
-            )
-        }
-    }
-}
-
-@Composable
 fun AeonAuthFlow(
     authRepository: AuthRepository
 ) {

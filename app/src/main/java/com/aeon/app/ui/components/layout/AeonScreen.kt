@@ -12,15 +12,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aeon.app.ui.theme.AeonResponsive
@@ -74,6 +78,8 @@ data class AeonScreenConfig(
     val maxContentWidthEnabled: Boolean = true
 )
 
+val LocalAeonAdditionalBottomPadding = staticCompositionLocalOf { 0.dp }
+
 // ----------------------------------------------------
 // Main Aeon Screen
 // ----------------------------------------------------
@@ -89,6 +95,9 @@ fun AeonScreen(
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val layoutDirection = LocalLayoutDirection.current
+    val additionalBottomPadding = LocalAeonAdditionalBottomPadding.current
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -113,11 +122,17 @@ fun AeonScreen(
             AeonScreenTokens.HorizontalPadding
         }
 
-        val finalPadding = contentPadding ?: PaddingValues(
+        val basePadding = contentPadding ?: PaddingValues(
             start = horizontalPadding,
             top = AeonScreenSpacing.Top,
             end = horizontalPadding,
             bottom = AeonScreenSpacing.Bottom
+        )
+        val finalPadding = PaddingValues(
+            start = basePadding.calculateStartPadding(layoutDirection),
+            top = basePadding.calculateTopPadding(),
+            end = basePadding.calculateEndPadding(layoutDirection),
+            bottom = basePadding.calculateBottomPadding() + additionalBottomPadding
         )
 
         val contentModifier = Modifier

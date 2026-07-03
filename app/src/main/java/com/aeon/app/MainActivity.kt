@@ -68,7 +68,6 @@ fun AeonApp(notificationDeepLinkHandler: AeonNotificationDeepLinkHandler? = null
     val container = com.aeon.app.di.currentAeonAppContainer()
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        delay(500)
         container.authRepository.initialize()
         withContext(Dispatchers.IO) {
             container.initializeAppDefaults()
@@ -78,10 +77,6 @@ fun AeonApp(notificationDeepLinkHandler: AeonNotificationDeepLinkHandler? = null
     val authState by container.authRepository.sessionState.collectAsState()
 
     when (authState) {
-        AuthSessionState.Loading -> {
-            com.aeon.app.ui.screens.auth.AeonAuthLoadingScreen()
-        }
-
         AuthSessionState.SignedOut -> {
             AeonAuthFlow(authRepository = container.authRepository)
         }

@@ -1,8 +1,5 @@
 package com.aeon.app.ui.navigation
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,115 +14,66 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.aeon.app.core.notifications.AeonNotificationChannelKey
 import com.aeon.app.ui.components.core.AeonButton
 import com.aeon.app.ui.components.core.AeonButtonSize
-import com.aeon.app.core.notifications.AeonNotificationChannelKey
-import com.aeon.app.ui.screens.notifications.NotificationInboxRoute
-import com.aeon.app.ui.screens.notifications.NotificationPreferenceRoute
-import com.aeon.app.ui.screens.notifications.NotificationSettingsRoute
-import android.net.Uri
+import com.aeon.app.ui.components.core.AeonButtonVariant
+import com.aeon.app.ui.components.core.AeonSectionHeader
+import com.aeon.app.ui.components.feedback.AeonNoDataState
+import com.aeon.app.ui.components.feature.AeonMoodIntensity
+import com.aeon.app.ui.components.feature.AeonMoodType
+import com.aeon.app.ui.components.feature.MoodSelector
+import com.aeon.app.ui.components.layout.AeonScreen
+import com.aeon.app.ui.screens.ai.AiChatScreenRoute
+import com.aeon.app.ui.screens.finance.AeonFinanceBudgetSetupRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceCategoriesRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceCategoryEditorRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceEntryDetailRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceOverviewRoute
-import com.aeon.app.ui.screens.finance.AeonFinanceBudgetSetupRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceRoute
 import com.aeon.app.ui.screens.finance.FinanceTopBarConfig
-import com.aeon.app.ui.screens.goals.AeonGoalRoute
-import com.aeon.app.ui.screens.habits.AeonHabitRoute
-import com.aeon.app.ui.screens.journal.AeonJournalRoute
-import com.aeon.app.ui.screens.settings.AeonSettingsRoute
-import com.aeon.app.ui.screens.health.AeonHealthRoute
-import com.aeon.app.ui.screens.mood.AeonMoodRoute
-import com.aeon.app.ui.screens.news.AeonNewsBriefRoute
-import com.aeon.app.ui.screens.tasks.AeonTaskRoute
-import com.aeon.app.ui.screens.tasks.AeonStandaloneAddTaskRoute
-import com.aeon.app.ui.screens.tasks.AeonTaskDetailRoute
-import com.aeon.app.ui.screens.today.AeonTodayRoute
-import com.aeon.app.ui.screens.track.AeonTrackRoute
 import com.aeon.app.ui.screens.focus.AeonFocusRoute
 import com.aeon.app.ui.screens.focus.FocusTopBarConfig
+import com.aeon.app.ui.screens.goals.AeonGoalRoute
+import com.aeon.app.ui.screens.habits.AeonHabitRoute
+import com.aeon.app.ui.screens.health.AeonHealthRoute
 import com.aeon.app.ui.screens.insights.AeonInsightsRoute
-import com.aeon.app.ui.screens.ai.AiChatScreenRoute
-import com.aeon.app.ui.components.core.AeonButtonVariant
-import com.aeon.app.ui.components.core.AeonCard
-import com.aeon.app.ui.components.core.AeonCardVariant
-import com.aeon.app.ui.components.core.AeonCompactSectionHeader
-import com.aeon.app.ui.components.core.AeonMiniStatTile
-import com.aeon.app.ui.components.core.AeonSectionHeader
-import com.aeon.app.ui.components.core.AeonStatTileTone
-import com.aeon.app.ui.components.feedback.AeonNoDataState
-import com.aeon.app.ui.components.feature.CompactNextBestActionCard
-import com.aeon.app.ui.components.feature.FocusTimer
-import com.aeon.app.ui.components.feature.FocusTimerState
-import com.aeon.app.ui.components.feature.FocusTimerStat
-import com.aeon.app.ui.components.feature.FocusTimerTone
-import com.aeon.app.ui.components.feature.HabitCard
-import com.aeon.app.ui.components.feature.HabitDayState
-import com.aeon.app.ui.components.feature.HabitStatus
-import com.aeon.app.ui.components.feature.HabitTone
-import com.aeon.app.ui.components.feature.HabitWeekDay
-import com.aeon.app.ui.components.feature.InsightCard
-import com.aeon.app.ui.components.feature.InsightMetric
-import com.aeon.app.ui.components.feature.InsightPriority
-import com.aeon.app.ui.components.feature.InsightTag
-import com.aeon.app.ui.components.feature.InsightTone
-import com.aeon.app.ui.components.feature.InsightTrend
-import com.aeon.app.ui.components.feature.LifeScoreBreakdownItem
-import com.aeon.app.ui.components.feature.LifeScoreCard
-import com.aeon.app.ui.components.feature.LifeScoreState
-import com.aeon.app.ui.components.feature.MoodSelector
-import com.aeon.app.ui.components.feature.NextActionPriority
-import com.aeon.app.ui.components.feature.NextActionReason
-import com.aeon.app.ui.components.feature.NextActionTone
-import com.aeon.app.ui.components.feature.NextBestActionCard
-import com.aeon.app.ui.components.feature.AeonMoodIntensity
-import com.aeon.app.ui.components.feature.AeonMoodType
-import com.aeon.app.ui.components.layout.AeonScreen
-import com.aeon.app.ui.theme.AeonSpacing
+import com.aeon.app.ui.screens.journal.AeonJournalRoute
+import com.aeon.app.ui.screens.mood.AeonMoodRoute
+import com.aeon.app.ui.screens.news.AeonNewsBriefRoute
+import com.aeon.app.ui.screens.notifications.NotificationInboxRoute
+import com.aeon.app.ui.screens.notifications.NotificationPreferenceRoute
+import com.aeon.app.ui.screens.notifications.NotificationSettingsRoute
+import com.aeon.app.ui.screens.settings.AeonSettingsRoute
+import com.aeon.app.ui.screens.tasks.AeonStandaloneAddTaskRoute
+import com.aeon.app.ui.screens.tasks.AeonTaskDetailRoute
+import com.aeon.app.ui.screens.tasks.AeonTaskRoute
+import com.aeon.app.ui.screens.today.AeonTodayRoute
+import com.aeon.app.ui.screens.today.TodayTopBarConfig
+import com.aeon.app.ui.screens.track.AeonTrackRoute
 
 /*
  * AEON APP NAV GRAPH
  *
  * Purpose:
- * Central screen graph for Aeon.
- *
- * This file maps:
- * - Top-level tabs
- * - Create/add screens
- * - Detail screens
- * - AI screens
- * - Settings screens
- * - Utility screens
+ * Central route graph for Aeon's main navigation stack.
  *
  * Senior Architecture Rule:
- * Keep route registration here.
- * Keep route strings in AppDestination.kt.
- * Keep navigation actions in AeonNavigationState.
+ * This file only registers destinations and connects screen callbacks to
+ * AeonNavigationState and typed AppDestination contracts.
  */
-
-
-// ----------------------------------------------------
-// Helpers
-// ----------------------------------------------------
-
-private fun String.asRouteArg(): String {
-    return Uri.encode(this)
-}
-
-// ----------------------------------------------------
-// Main Nav Graph
-// ----------------------------------------------------
 
 @Composable
 fun AppNavGraph(
     navController: NavHostController,
     modifier: Modifier = Modifier,
     startDestination: String = TodayDestination.route,
+    motionScale: AeonMotionScale = AeonMotionScale.Normal,
     navigationState: AeonNavigationState = rememberAeonNavigationState(
         navController = navController,
         startDestination = startDestination
     ),
+    onTodayTopBarConfigChanged: (TodayTopBarConfig) -> Unit = {},
     onFocusTopBarConfigChanged: (FocusTopBarConfig) -> Unit = {},
     onFinanceTopBarConfigChanged: (FinanceTopBarConfig) -> Unit = {}
 ) {
@@ -133,32 +81,42 @@ fun AppNavGraph(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier,
-        route = AeonGraphs.MAIN
+        route = AeonGraphs.MAIN,
+        enterTransition = aeonEnterTransition(motionScale),
+        exitTransition = aeonExitTransition(motionScale),
+        popEnterTransition = aeonPopEnterTransition(motionScale),
+        popExitTransition = aeonPopExitTransition(motionScale),
+        sizeTransform = {
+            aeonSizeTransform(motionScale)
+        }
     ) {
         aeonTopLevelRoutes(
             navigationState = navigationState,
+            onTodayTopBarConfigChanged = onTodayTopBarConfigChanged,
             onFocusTopBarConfigChanged = onFocusTopBarConfigChanged,
             onFinanceTopBarConfigChanged = onFinanceTopBarConfigChanged
         )
+        aeonFeatureRoutes(navigationState)
         aeonCreateRoutes(navigationState)
         aeonDetailRoutes(navigationState)
+        aeonFinanceRoutes(navigationState)
         aeonSettingsRoutes(navigationState)
+        aeonNotificationRoutes(navigationState)
         aeonUtilityRoutes(navigationState)
     }
 }
 
-
-// ----------------------------------------------------
-// Top Level Routes
-// ----------------------------------------------------
-
 private fun NavGraphBuilder.aeonTopLevelRoutes(
     navigationState: AeonNavigationState,
+    onTodayTopBarConfigChanged: (TodayTopBarConfig) -> Unit,
     onFocusTopBarConfigChanged: (FocusTopBarConfig) -> Unit,
     onFinanceTopBarConfigChanged: (FinanceTopBarConfig) -> Unit
 ) {
     composable(TodayDestination.route) {
-        TodayRoute(navigationState)
+        TodayRoute(
+            navigationState = navigationState,
+            onTodayTopBarConfigChanged = onTodayTopBarConfigChanged
+        )
     }
 
     composable(TrackDestination.route) {
@@ -173,86 +131,9 @@ private fun NavGraphBuilder.aeonTopLevelRoutes(
         InsightsRoute(navigationState)
     }
 
-    composable("tasks") {
-        AeonTaskRoute(
-            onOpenTask = { taskId ->
-                navigationState.navigateToTaskDetail(taskId)
-            },
-            onStartFocus = navigationState::navigateToFocus,
-            onOpenNotifications = {
-                navigationState.navigateToRoute("notification_inbox")
-            }
-        )
-    }
-
-    composable("habits") {
-        AeonHabitRoute(
-            onAddHabit = {
-                navigationState.navigateToRoute("add_habit")
-            },
-            onOpenHabit = { habitId ->
-                navigationState.navigateToHabitDetail(habitId)
-            },
-            onCompleteHabit = { habitId ->
-                // Later connect to HabitViewModel.completeHabit(habitId)
-            },
-            onSkipHabit = { habitId ->
-                // Later connect to HabitViewModel.skipHabit(habitId)
-            },
-            onOpenNotifications = {
-                navigationState.navigateToRoute("notification_preference/Habits")
-            }
-        )
-    }
-
-    composable("mood") {
-        AeonMoodRoute(
-            onAddMoodEntry = {
-                navigationState.navigateToRoute("add_mood_entry")
-            },
-            onSaveMood = { mood ->
-                // Later connect to MoodViewModel.saveMood(mood.id)
-            },
-            onOpenMoodEntry = { entryId ->
-                navigationState.navigateToRoute("mood_entry/$entryId")
-            },
-            onOpenJournalPrompt = { promptId ->
-                navigationState.navigateToRoute("journal_prompt/$promptId")
-            },
-            onOpenNotifications = {
-                navigationState.navigateToRoute("notification_preference/Mood")
-            }
-        )
-    }
-
-    composable("health") {
-        AeonHealthRoute(
-            onAddHealthEntry = {
-                navigationState.navigateToRoute("add_health_entry")
-            },
-            onLogWater = {
-                // Later connect to HealthViewModel.logWater()
-            },
-            onLogSleep = {
-                navigationState.navigateToRoute("add_sleep_entry")
-            },
-            onOpenMedicine = { medicineId ->
-                navigationState.navigateToRoute("medicine_detail/$medicineId")
-            },
-            onOpenHealthEntry = { entryId ->
-                navigationState.navigateToRoute("health_entry/$entryId")
-            },
-            onOpenNotifications = {
-                navigationState.navigateToRoute("notification_preference/Health")
-            }
-        )
-    }
-
-    composable("finance") {
+    composable(FinanceDestination.route) {
         AeonFinanceRoute(
-            onOpenTransaction = { transactionId ->
-                navigationState.navigateToFinanceEntryDetail(transactionId)
-            },
+            onOpenTransaction = navigationState::navigateToFinanceEntryDetail,
             onOpenBudget = { budgetId ->
                 navigationState.navigateToRoute(BudgetDetailDestination.createRoute(budgetId))
             },
@@ -263,60 +144,140 @@ private fun NavGraphBuilder.aeonTopLevelRoutes(
                 navigationState.navigateToRoute(FinanceBudgetSetupDestination.createRoute(month))
             },
             onOpenCategories = {
-                navigationState.navigateToRoute(FinanceCategoriesDestination.route)
+                navigationState.navigateToDestination(FinanceCategoriesDestination)
             },
             onTopBarConfigChanged = onFinanceTopBarConfigChanged
         )
     }
+}
 
-    composable("goals") {
-        AeonGoalRoute(
-            onAddGoal = {
-                navigationState.navigateToRoute("add_goal")
-            },
-            onOpenGoal = { goalId ->
-                navigationState.navigateToGoalDetail(goalId)
-            },
-            onOpenMilestone = { milestoneId ->
-                navigationState.navigateToRoute("goal_milestone/$milestoneId")
-            },
-            onMarkMilestoneDone = { milestoneId ->
-                // Later connect to GoalViewModel.markMilestoneDone(milestoneId)
-            },
+private fun NavGraphBuilder.aeonFeatureRoutes(
+    navigationState: AeonNavigationState
+) {
+    composable(TasksDestination.route) {
+        AeonTaskRoute(
+            onOpenTask = navigationState::navigateToTaskDetail,
+            onStartFocus = navigationState::navigateToFocus,
             onOpenNotifications = {
-                navigationState.navigateToRoute("notification_preference/Goals")
+                navigationState.navigateToDestination(NotificationInboxDestination)
             }
         )
     }
 
-    composable("journal") {
-        AeonJournalRoute(
-            onCreateEntry = {
-                navigationState.navigateToRoute("add_journal_entry")
+    composable(HabitsDestination.route) {
+        AeonHabitRoute(
+            onAddHabit = navigationState::navigateToAddHabit,
+            onOpenHabit = navigationState::navigateToHabitDetail,
+            onCompleteHabit = { _ ->
+                // Later connect to HabitViewModel.completeHabit(habitId).
             },
-            onSaveQuickNote = { note ->
-                // Later connect to JournalViewModel.saveQuickNote(note)
-            },
-            onOpenEntry = { entryId ->
-                navigationState.navigateToRoute("journal_entry/$entryId")
-            },
-            onOpenPrompt = { promptId ->
-                navigationState.navigateToRoute("journal_prompt/$promptId")
-            },
-            onToggleFavorite = { entryId ->
-                // Later connect to JournalViewModel.toggleFavorite(entryId)
+            onSkipHabit = { _ ->
+                // Later connect to HabitViewModel.skipHabit(habitId).
             },
             onOpenNotifications = {
-                navigationState.navigateToRoute("notification_preference/Journal")
+                navigationState.navigateToRoute(
+                    NotificationPreferenceDestination.createRoute(
+                        AeonNotificationChannelKey.Habits.name
+                    )
+                )
+            }
+        )
+    }
+
+    composable(MoodDestination.route) {
+        AeonMoodRoute(
+            onAddMoodEntry = navigationState::navigateToMoodCheckIn,
+            onSaveMood = { _ ->
+                // Later connect to MoodViewModel.saveMood(mood.id).
+            },
+            onOpenMoodEntry = { entryId ->
+                navigationState.navigateToRoute(MoodEntryDetailDestination.createRoute(entryId))
+            },
+            onOpenJournalPrompt = { promptId ->
+                navigationState.navigateToRoute(JournalPromptDestination.createRoute(promptId))
+            },
+            onOpenNotifications = {
+                navigationState.navigateToRoute(
+                    NotificationPreferenceDestination.createRoute(
+                        AeonNotificationChannelKey.Mood.name
+                    )
+                )
+            }
+        )
+    }
+
+    composable(HealthDestination.route) {
+        AeonHealthRoute(
+            onAddHealthEntry = {
+                navigationState.navigateToDestination(AddHealthEntryDestination)
+            },
+            onLogWater = {
+                // Later connect to HealthViewModel.logWater().
+            },
+            onLogSleep = {
+                navigationState.navigateToDestination(AddSleepEntryDestination)
+            },
+            onOpenMedicine = { medicineId ->
+                navigationState.navigateToRoute(MedicineDetailDestination.createRoute(medicineId))
+            },
+            onOpenHealthEntry = { entryId ->
+                navigationState.navigateToRoute(HealthEntryDestination.createRoute(entryId))
+            },
+            onOpenNotifications = {
+                navigationState.navigateToRoute(
+                    NotificationPreferenceDestination.createRoute(
+                        AeonNotificationChannelKey.Health.name
+                    )
+                )
+            }
+        )
+    }
+
+    composable(GoalsDestination.route) {
+        AeonGoalRoute(
+            onAddGoal = navigationState::navigateToAddGoal,
+            onOpenGoal = navigationState::navigateToGoalDetail,
+            onOpenMilestone = { milestoneId ->
+                navigationState.navigateToRoute(
+                    GoalMilestoneDestination.createRoute(milestoneId)
+                )
+            },
+            onMarkMilestoneDone = { _ ->
+                // ViewModel handles completion in GoalScreen route.
+            },
+            onOpenNotifications = {
+                navigationState.navigateToRoute(
+                    NotificationPreferenceDestination.createRoute(
+                        AeonNotificationChannelKey.Goals.name
+                    )
+                )
+            }
+        )
+    }
+
+    composable(JournalDestination.route) {
+        AeonJournalRoute(
+            onCreateEntry = {
+                navigationState.navigateToJournalEntry()
+            },
+            onSaveQuickNote = { _ ->
+                // ViewModel handles persistence in JournalScreen route.
+            },
+            onOpenEntry = navigationState::navigateToJournalEntryDetail,
+            onOpenPrompt = { promptId ->
+                navigationState.navigateToRoute(JournalPromptDestination.createRoute(promptId))
+            },
+            onToggleFavorite = { _ ->
+                // ViewModel handles favorite state in JournalScreen route.
+            },
+            onOpenNotifications = {
+                navigationState.navigateToRoute(
+                    NotificationPreferenceDestination.createRoute(JournalDestination.title)
+                )
             }
         )
     }
 }
-
-
-// ----------------------------------------------------
-// Create / Add Routes
-// ----------------------------------------------------
 
 private fun NavGraphBuilder.aeonCreateRoutes(
     navigationState: AeonNavigationState
@@ -324,13 +285,15 @@ private fun NavGraphBuilder.aeonCreateRoutes(
     composable(
         route = AddTaskDestination.route,
         arguments = listOf(optionalStringArgument(AeonNavArgs.DATE))
-    ) { entry ->
-        AeonStandaloneAddTaskRoute(onDismiss = { navigationState.navigateBack() })
+    ) {
+        AeonStandaloneAddTaskRoute(
+            onDismiss = navigationState::navigateBack
+        )
     }
 
     composable(AddHabitDestination.route) {
         AeonFormPlaceholderRoute(
-            title = "Add Habit",
+            title = AddHabitDestination.title,
             subtitle = "Build a repeatable system for your future self.",
             primaryAction = "Save Habit",
             navigationState = navigationState
@@ -339,7 +302,7 @@ private fun NavGraphBuilder.aeonCreateRoutes(
 
     composable(AddGoalDestination.route) {
         AeonFormPlaceholderRoute(
-            title = "Add Goal",
+            title = AddGoalDestination.title,
             subtitle = "Turn a long-term direction into a trackable goal.",
             primaryAction = "Save Goal",
             navigationState = navigationState
@@ -351,7 +314,7 @@ private fun NavGraphBuilder.aeonCreateRoutes(
         arguments = listOf(optionalStringArgument(AeonNavArgs.TYPE))
     ) { entry ->
         AeonFormPlaceholderRoute(
-            title = "Add Finance Entry",
+            title = AddFinanceEntryDestination.title,
             subtitle = "Record your income, expense, or transfer with clarity.",
             primaryAction = "Save Entry",
             argumentValue = entry.stringArg(AeonNavArgs.TYPE),
@@ -368,19 +331,41 @@ private fun NavGraphBuilder.aeonCreateRoutes(
         arguments = listOf(optionalStringArgument(AeonNavArgs.DATE))
     ) { entry ->
         AeonFormPlaceholderRoute(
-            title = "Journal Entry",
+            title = AddJournalEntryDestination.title,
             subtitle = "Reflect privately and let Aeon understand your day.",
             primaryAction = "Save Journal",
             argumentValue = entry.stringArg(AeonNavArgs.DATE),
             navigationState = navigationState
         )
     }
+
+    composable(AddTrackEntryDestination.route) {
+        AeonFormPlaceholderRoute(
+            title = AddTrackEntryDestination.title,
+            subtitle = "Capture a quick cross-domain signal for your weekly track board.",
+            primaryAction = "Save Entry",
+            navigationState = navigationState
+        )
+    }
+
+    composable(AddHealthEntryDestination.route) {
+        AeonFormPlaceholderRoute(
+            title = AddHealthEntryDestination.title,
+            subtitle = "Log a health event, activity, symptom, or medicine moment.",
+            primaryAction = "Save Entry",
+            navigationState = navigationState
+        )
+    }
+
+    composable(AddSleepEntryDestination.route) {
+        AeonFormPlaceholderRoute(
+            title = AddSleepEntryDestination.title,
+            subtitle = "Record recovery, sleep timing, and rest quality with context.",
+            primaryAction = "Save Sleep",
+            navigationState = navigationState
+        )
+    }
 }
-
-
-// ----------------------------------------------------
-// Detail Routes
-// ----------------------------------------------------
 
 private fun NavGraphBuilder.aeonDetailRoutes(
     navigationState: AeonNavigationState
@@ -390,8 +375,8 @@ private fun NavGraphBuilder.aeonDetailRoutes(
         arguments = listOf(requiredStringArgument(AeonNavArgs.TASK_ID))
     ) { entry ->
         AeonTaskDetailRoute(
-            taskId = entry.stringArg(AeonNavArgs.TASK_ID).orEmpty(),
-            onBack = { navigationState.navigateBack() },
+            taskId = entry.stringArg(AeonNavArgs.TASK_ID),
+            onBack = navigationState::navigateBack,
             onStartFocus = navigationState::navigateToFocus
         )
     }
@@ -401,8 +386,8 @@ private fun NavGraphBuilder.aeonDetailRoutes(
         arguments = listOf(requiredStringArgument(AeonNavArgs.HABIT_ID))
     ) { entry ->
         AeonDetailPlaceholderRoute(
-            title = "Habit Detail",
-            subtitle = "Review consistency, streak, and habit performance.",
+            title = HabitDetailDestination.title,
+            subtitle = "Review consistency, streak strength, and habit performance.",
             id = entry.stringArg(AeonNavArgs.HABIT_ID),
             navigationState = navigationState
         )
@@ -413,8 +398,8 @@ private fun NavGraphBuilder.aeonDetailRoutes(
         arguments = listOf(requiredStringArgument(AeonNavArgs.GOAL_ID))
     ) { entry ->
         AeonDetailPlaceholderRoute(
-            title = "Goal Detail",
-            subtitle = "Track progress and next milestones.",
+            title = GoalDetailDestination.title,
+            subtitle = "Track progress, blocked areas, and upcoming milestones.",
             id = entry.stringArg(AeonNavArgs.GOAL_ID),
             navigationState = navigationState
         )
@@ -425,8 +410,8 @@ private fun NavGraphBuilder.aeonDetailRoutes(
         arguments = listOf(requiredStringArgument(AeonNavArgs.INSIGHT_ID))
     ) { entry ->
         AeonDetailPlaceholderRoute(
-            title = "Insight Detail",
-            subtitle = "Understand the pattern behind this insight.",
+            title = InsightDetailDestination.title,
+            subtitle = "Read the full pattern, signal strength, and recommendation context.",
             id = entry.stringArg(AeonNavArgs.INSIGHT_ID),
             navigationState = navigationState
         )
@@ -437,13 +422,119 @@ private fun NavGraphBuilder.aeonDetailRoutes(
         arguments = listOf(requiredStringArgument(AeonNavArgs.FOCUS_SESSION_ID))
     ) { entry ->
         AeonDetailPlaceholderRoute(
-            title = "Focus Session",
-            subtitle = "Review your deep work session and distraction pattern.",
+            title = FocusSessionDetailDestination.title,
+            subtitle = "Review your deep-work session and interruption pattern.",
             id = entry.stringArg(AeonNavArgs.FOCUS_SESSION_ID),
             navigationState = navigationState
         )
     }
 
+    composable(
+        route = JournalEntryDetailDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.ENTRY_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = JournalEntryDetailDestination.title,
+            subtitle = "Open the saved reflection with private context and metadata.",
+            id = entry.stringArg(AeonNavArgs.ENTRY_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = MoodEntryDetailDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.ENTRY_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = MoodEntryDetailDestination.title,
+            subtitle = "Review this emotional record and the related reflection context.",
+            id = entry.stringArg(AeonNavArgs.ENTRY_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = HealthEntryDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.ENTRY_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = HealthEntryDestination.title,
+            subtitle = "Inspect the logged health event, notes, and follow-up context.",
+            id = entry.stringArg(AeonNavArgs.ENTRY_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = MedicineDetailDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.MEDICINE_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = MedicineDetailDestination.title,
+            subtitle = "View dosage history, reminders, and adherence context.",
+            id = entry.stringArg(AeonNavArgs.MEDICINE_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = JournalPromptDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.PROMPT_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = JournalPromptDestination.title,
+            subtitle = "Open the reflection prompt and connect it to a private entry.",
+            id = entry.stringArg(AeonNavArgs.PROMPT_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = GoalMilestoneDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.MILESTONE_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = GoalMilestoneDestination.title,
+            subtitle = "Inspect milestone status, dependencies, and progress signals.",
+            id = entry.stringArg(AeonNavArgs.MILESTONE_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = InsightDomainDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.DOMAIN_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = InsightDomainDestination.title,
+            subtitle = "Review a domain-specific intelligence view across recent activity.",
+            id = entry.stringArg(AeonNavArgs.DOMAIN_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = RecommendationDetailDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.RECOMMENDATION_ID))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = RecommendationDetailDestination.title,
+            subtitle = "Read the reasoning, urgency, and suggested action in full.",
+            id = entry.stringArg(AeonNavArgs.RECOMMENDATION_ID),
+            navigationState = navigationState
+        )
+    }
+
+    composable(AiChatDestination.route) {
+        AiChatScreenRoute(
+            onBack = navigationState::navigateBack
+        )
+    }
+}
+
+private fun NavGraphBuilder.aeonFinanceRoutes(
+    navigationState: AeonNavigationState
+) {
     composable(
         route = FinanceEntryDetailDestination.route,
         arguments = listOf(requiredStringArgument(AeonNavArgs.ENTRY_ID))
@@ -459,8 +550,8 @@ private fun NavGraphBuilder.aeonDetailRoutes(
         arguments = listOf(requiredStringArgument(AeonNavArgs.ID))
     ) { entry ->
         AeonDetailPlaceholderRoute(
-            title = "Budget Detail",
-            subtitle = "Review remaining budget, alerts, and entry impact.",
+            title = BudgetDetailDestination.title,
+            subtitle = "Review remaining budget, alerts, and the entries affecting it.",
             id = entry.stringArg(AeonNavArgs.ID),
             navigationState = navigationState
         )
@@ -473,9 +564,7 @@ private fun NavGraphBuilder.aeonDetailRoutes(
         AeonFinanceOverviewRoute(
             monthKey = entry.stringArg(AeonNavArgs.MONTH),
             onBack = navigationState::navigateBack,
-            onOpenTransaction = { transactionId ->
-                navigationState.navigateToFinanceEntryDetail(transactionId)
-            }
+            onOpenTransaction = navigationState::navigateToFinanceEntryDetail
         )
     }
 
@@ -511,28 +600,7 @@ private fun NavGraphBuilder.aeonDetailRoutes(
             onBack = navigationState::navigateBack
         )
     }
-
-    composable(
-        route = JournalEntryDetailDestination.route,
-        arguments = listOf(requiredStringArgument(AeonNavArgs.ENTRY_ID))
-    ) { entry ->
-        AeonDetailPlaceholderRoute(
-            title = "Journal Entry",
-            subtitle = "Private reflection saved inside Aeon.",
-            id = entry.stringArg(AeonNavArgs.ENTRY_ID),
-            navigationState = navigationState
-        )
-    }
-
-    composable(AiChatDestination.route) {
-        AiChatScreenRoute(onBack = { navigationState.navigateBack() })
-    }
 }
-
-
-// ----------------------------------------------------
-// Settings Routes
-// ----------------------------------------------------
 
 private fun NavGraphBuilder.aeonSettingsRoutes(
     navigationState: AeonNavigationState
@@ -543,9 +611,9 @@ private fun NavGraphBuilder.aeonSettingsRoutes(
 
     composable(PrivacySettingsDestination.route) {
         AeonDetailPlaceholderRoute(
-            title = "Privacy",
-            subtitle = "Control what Aeon stores, analyzes, and protects.",
-            id = "privacy",
+            title = PrivacySettingsDestination.title,
+            subtitle = "Control what Aeon stores, analyzes, syncs, and protects.",
+            id = PrivacySettingsDestination.baseRoute,
             navigationState = navigationState
         )
     }
@@ -558,68 +626,39 @@ private fun NavGraphBuilder.aeonSettingsRoutes(
 
     composable(AppearanceSettingsDestination.route) {
         AeonDetailPlaceholderRoute(
-            title = "Appearance",
-            subtitle = "Tune Aeon’s visual system for your comfort.",
-            id = "appearance",
+            title = AppearanceSettingsDestination.title,
+            subtitle = "Tune Aeon's visual system for comfort, contrast, and focus.",
+            id = AppearanceSettingsDestination.baseRoute,
             navigationState = navigationState
         )
     }
 
     composable(DataBackupSettingsDestination.route) {
         AeonDetailPlaceholderRoute(
-            title = "Data & Backup",
-            subtitle = "Manage offline data, export, restore, and encrypted backup.",
-            id = "backup",
+            title = DataBackupSettingsDestination.title,
+            subtitle = "Manage offline data, export, restore, and encrypted backup flows.",
+            id = DataBackupSettingsDestination.baseRoute,
             navigationState = navigationState
         )
     }
 
     composable(AboutAeonDestination.route) {
         AeonDetailPlaceholderRoute(
-            title = "About Aeon",
-            subtitle = "Your private personal life operating system.",
-            id = "aeon",
+            title = AboutAeonDestination.title,
+            subtitle = "Your private personal life operating system and design philosophy.",
+            id = AboutAeonDestination.baseRoute,
             navigationState = navigationState
         )
     }
 }
 
-
-// ----------------------------------------------------
-// Utility Routes
-// ----------------------------------------------------
-
-private fun NavGraphBuilder.aeonUtilityRoutes(
+private fun NavGraphBuilder.aeonNotificationRoutes(
     navigationState: AeonNavigationState
 ) {
-    composable("daily_brief") {
-        AeonNewsBriefRoute(onBack = navigationState::navigateBack)
-    }
-
-    composable(
-        route = SearchDestination.route,
-        arguments = listOf(optionalStringArgument(AeonNavArgs.QUERY))
-    ) { entry ->
-        AeonDetailPlaceholderRoute(
-            title = "Search",
-            subtitle = "Search tasks, habits, journal entries, insights, and finance records.",
-            id = entry.stringArg(AeonNavArgs.QUERY).ifBlank { "all" },
-            navigationState = navigationState
-        )
-    }
-
-    composable(ProfileDestination.route) {
-        AeonDetailPlaceholderRoute(
-            title = "Profile",
-            subtitle = "Your personal Aeon identity and local preferences.",
-            id = "profile",
-            navigationState = navigationState
-        )
-    }
-
-    composable("notification_inbox") {
+    composable(NotificationInboxDestination.route) {
         NotificationInboxRoute(
             onBack = navigationState::navigateBack,
+            onOpenSettings = navigationState::navigateToNotificationSettings,
             onOpenRoute = { route ->
                 navigationState.navigateToRoute(route)
             }
@@ -627,17 +666,10 @@ private fun NavGraphBuilder.aeonUtilityRoutes(
     }
 
     composable(
-        route = "notification_preference/{channel}",
-        arguments = listOf(
-            navArgument("channel") {
-                type = NavType.StringType
-            }
-        )
+        route = NotificationPreferenceDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.CHANNEL))
     ) { entry ->
-        val channelName = entry.arguments
-            ?.getString("channel")
-            .orEmpty()
-
+        val channelName = entry.stringArg(AeonNavArgs.CHANNEL)
         val channelKey = AeonNotificationChannelKey.entries
             .firstOrNull { it.name == channelName }
             ?: AeonNotificationChannelKey.System
@@ -649,44 +681,61 @@ private fun NavGraphBuilder.aeonUtilityRoutes(
     }
 }
 
+private fun NavGraphBuilder.aeonUtilityRoutes(
+    navigationState: AeonNavigationState
+) {
+    composable(DailyBriefDestination.route) {
+        AeonNewsBriefRoute(
+            onBack = navigationState::navigateBack
+        )
+    }
 
-// ----------------------------------------------------
-// Premium Placeholder: Today
-// ----------------------------------------------------
+    composable(
+        route = SearchDestination.route,
+        arguments = listOf(optionalStringArgument(AeonNavArgs.QUERY))
+    ) { entry ->
+        AeonDetailPlaceholderRoute(
+            title = SearchDestination.title,
+            subtitle = "Search tasks, habits, journal entries, insights, and finance records.",
+            id = entry.stringArg(AeonNavArgs.QUERY).ifBlank { "all" },
+            navigationState = navigationState
+        )
+    }
+
+    composable(ProfileDestination.route) {
+        AeonDetailPlaceholderRoute(
+            title = ProfileDestination.title,
+            subtitle = "Your personal Aeon identity and local preferences.",
+            id = ProfileDestination.baseRoute,
+            navigationState = navigationState
+        )
+    }
+}
 
 @Composable
 private fun TodayRoute(
-    navigationState: AeonNavigationState
+    navigationState: AeonNavigationState,
+    onTodayTopBarConfigChanged: (TodayTopBarConfig) -> Unit
 ) {
     AeonTodayRoute(
         onStartFocus = navigationState::navigateToFocus,
         onAddTask = {
             navigationState.navigateToAddTask()
         },
-        onLogMood = {
-            navigationState.navigateToRoute("add_mood_entry")
-        },
+        onLogMood = navigationState::navigateToMoodCheckIn,
         onOpenTrack = navigationState::navigateToTrack,
         onOpenInsights = navigationState::navigateToInsights,
         onOpenNotifications = {
-            navigationState.navigateToRoute("notification_inbox")
+            navigationState.navigateToDestination(NotificationInboxDestination)
         },
-        onOpenHabit = { habitId ->
-            navigationState.navigateToHabitDetail(habitId)
-        },
-        onOpenTask = { taskId ->
-            navigationState.navigateToRoute("task_detail/$taskId")
-        },
+        onOpenHabit = navigationState::navigateToHabitDetail,
+        onOpenTask = navigationState::navigateToTaskDetail,
         onOpenAiChat = {
-            navigationState.navigateToRoute(AiChatDestination.route)
-        }
+            navigationState.navigateToDestination(AiChatDestination)
+        },
+        onTopBarConfigChanged = onTodayTopBarConfigChanged
     )
 }
-
-
-// ----------------------------------------------------
-// Premium Placeholder: Track
-// ----------------------------------------------------
 
 @Composable
 private fun TrackRoute(
@@ -694,27 +743,16 @@ private fun TrackRoute(
 ) {
     AeonTrackRoute(
         onAddEntry = {
-            navigationState.navigateToRoute("add_track_entry")
+            navigationState.navigateToDestination(AddTrackEntryDestination)
         },
-        onOpenHabit = { habitId ->
-            navigationState.navigateToHabitDetail(habitId)
-        },
-        onOpenGoal = { goalId ->
-            navigationState.navigateToGoalDetail(goalId)
-        },
-        onOpenInsight = { insightId ->
-            navigationState.navigateToInsightDetail(insightId)
-        },
+        onOpenHabit = navigationState::navigateToHabitDetail,
+        onOpenGoal = navigationState::navigateToGoalDetail,
+        onOpenInsight = navigationState::navigateToInsightDetail,
         onOpenNotifications = {
-            navigationState.navigateToRoute("notification_inbox")
+            navigationState.navigateToDestination(NotificationInboxDestination)
         }
     )
 }
-
-
-// ----------------------------------------------------
-// Premium Placeholder: Focus
-// ----------------------------------------------------
 
 @Composable
 private fun FocusRoute(
@@ -725,35 +763,25 @@ private fun FocusRoute(
     )
 }
 
-
-// ----------------------------------------------------
-// Premium Placeholder: Insights
-// ----------------------------------------------------
-
 @Composable
 private fun InsightsRoute(
     navigationState: AeonNavigationState
 ) {
     AeonInsightsRoute(
-        onOpenInsight = { insightId ->
-            navigationState.navigateToInsightDetail(insightId)
-        },
+        onOpenInsight = navigationState::navigateToInsightDetail,
         onOpenDomain = { domainId ->
-            navigationState.navigateToRoute("insight_domain/$domainId")
+            navigationState.navigateToRoute(InsightDomainDestination.createRoute(domainId))
         },
         onOpenRecommendation = { recommendationId ->
-            navigationState.navigateToRoute("recommendation_detail/$recommendationId")
+            navigationState.navigateToRoute(
+                RecommendationDetailDestination.createRoute(recommendationId)
+            )
         },
         onOpenNotifications = {
-            navigationState.navigateToRoute("notification_inbox")
+            navigationState.navigateToDestination(NotificationInboxDestination)
         }
     )
 }
-
-
-// ----------------------------------------------------
-// Premium Placeholder: Mood Entry
-// ----------------------------------------------------
 
 @Composable
 private fun AeonMoodEntryRoute(
@@ -764,12 +792,12 @@ private fun AeonMoodEntryRoute(
 
     AeonScreen {
         AeonSectionHeader(
-            title = "Mood Check-in",
+            title = AddMoodEntryDestination.title,
             subtitle = "A private emotional record for better self-awareness.",
             action = {
                 AeonButton(
                     text = "Back",
-                    onClick = { navigationState.navigateBack() },
+                    onClick = navigationState::navigateBack,
                     variant = AeonButtonVariant.Secondary,
                     size = AeonButtonSize.Small
                 )
@@ -789,50 +817,26 @@ private fun AeonMoodEntryRoute(
     }
 }
 
-
-// ----------------------------------------------------
-// Premium Placeholder: Settings
-// ----------------------------------------------------
-
 @Composable
 private fun SettingsRoute(
     navigationState: AeonNavigationState
 ) {
     AeonSettingsRoute(
-        onOpenNotificationSettings = {
-            navigationState.navigateToRoute("notification_settings")
+        onOpenHomeControl = navigationState::navigateToToday,
+        onOpenTrackControl = navigationState::navigateToTrack,
+        onOpenFocusControl = navigationState::navigateToFocus,
+        onOpenInsightsControl = navigationState::navigateToInsights,
+        onOpenFinanceControl = navigationState::navigateToFinance,
+        onOpenAiControl = {
+            navigationState.navigateToDestination(AiChatDestination)
         },
-        onOpenPrivacySettings = {
-            navigationState.navigateToRoute("privacy_settings")
-        },
-        onOpenAppearanceSettings = {
-            navigationState.navigateToRoute("appearance_settings")
-        },
-        onOpenBackupSettings = {
-            navigationState.navigateToRoute("backup_settings")
-        },
-        onOpenDataSettings = {
-            navigationState.navigateToRoute("data_settings")
-        },
-        onOpenSecuritySettings = {
-            navigationState.navigateToRoute("security_settings")
-        },
-        onExportData = {
-            navigationState.navigateToRoute("export_data")
-        },
-        onOpenAbout = {
-            navigationState.navigateToRoute("about_aeon")
-        },
-        onOpenHelp = {
-            navigationState.navigateToRoute("help_center")
-        }
+        onOpenNotificationSettings = navigationState::navigateToNotificationSettings,
+        onOpenPrivacySettings = navigationState::navigateToPrivacySettings,
+        onOpenAppearanceSettings = navigationState::navigateToAppearanceSettings,
+        onOpenDataBackupSettings = navigationState::navigateToDataBackupSettings,
+        onOpenAbout = navigationState::navigateToAboutAeon
     )
 }
-
-
-// ----------------------------------------------------
-// Generic Premium Form Placeholder
-// ----------------------------------------------------
 
 @Composable
 private fun AeonFormPlaceholderRoute(
@@ -849,7 +853,7 @@ private fun AeonFormPlaceholderRoute(
             action = {
                 AeonButton(
                     text = "Back",
-                    onClick = { navigationState.navigateBack() },
+                    onClick = navigationState::navigateBack,
                     variant = AeonButtonVariant.Secondary,
                     size = AeonButtonSize.Small
                 )
@@ -864,17 +868,10 @@ private fun AeonFormPlaceholderRoute(
                 "Received route argument: $argumentValue. Connect this to your final form screen."
             },
             actionText = primaryAction,
-            onAction = {
-                navigationState.navigateBack()
-            }
+            onAction = navigationState::navigateBack
         )
     }
 }
-
-
-// ----------------------------------------------------
-// Generic Premium Detail Placeholder
-// ----------------------------------------------------
 
 @Composable
 private fun AeonDetailPlaceholderRoute(
@@ -890,7 +887,7 @@ private fun AeonDetailPlaceholderRoute(
             action = {
                 AeonButton(
                     text = "Back",
-                    onClick = { navigationState.navigateBack() },
+                    onClick = navigationState::navigateBack,
                     variant = AeonButtonVariant.Secondary,
                     size = AeonButtonSize.Small
                 )
@@ -901,17 +898,10 @@ private fun AeonDetailPlaceholderRoute(
             title = "$title screen",
             message = "Route is connected successfully. Current reference: $id",
             actionText = "Done",
-            onAction = {
-                navigationState.navigateBack()
-            }
+            onAction = navigationState::navigateBack
         )
     }
 }
-
-
-// ----------------------------------------------------
-// Argument Helpers
-// ----------------------------------------------------
 
 private fun optionalStringArgument(
     key: String
@@ -923,7 +913,6 @@ private fun optionalStringArgument(
     }
 }
 
-
 private fun requiredStringArgument(
     key: String
 ): NamedNavArgument {
@@ -931,7 +920,6 @@ private fun requiredStringArgument(
         type = NavType.StringType
     }
 }
-
 
 private fun NavBackStackEntry.stringArg(
     key: String

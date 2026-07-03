@@ -1,7 +1,7 @@
 import { parseMonthKey } from "../../lib/dates.js";
 import { parseWithSchema } from "../../lib/validation.js";
-import { archiveFinanceAccount, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCategory, deleteFinanceTransaction, getFinanceOverview, getFinanceTransaction, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceTransactions, setFinanceBudgetsForMonth } from "./repository.js";
-import { financeAccountInputSchema, financeBudgetQuerySchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionQuerySchema } from "./schemas.js";
+import { archiveFinanceAccount, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCategory, deleteFinanceTransaction, getFinanceOverview, getFinanceTransaction, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceTransactionMonths, listFinanceTransactions, setFinanceBudgetsForMonth } from "./repository.js";
+import { financeAccountInputSchema, financeBudgetQuerySchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
 export async function registerFinanceRoutes(app) {
     app.get("/categories", { preHandler: app.authenticate }, async (request) => {
         return listFinanceCategories(app.db, request.authUser.userId);
@@ -28,6 +28,10 @@ export async function registerFinanceRoutes(app) {
     app.get("/transactions", { preHandler: app.authenticate }, async (request) => {
         const query = parseWithSchema(financeTransactionQuerySchema, request.query, "Invalid finance transaction query.");
         return listFinanceTransactions(app.db, request.authUser.userId, query);
+    });
+    app.get("/transaction-months", { preHandler: app.authenticate }, async (request) => {
+        const query = parseWithSchema(financeTransactionMonthsQuerySchema, request.query, "Invalid finance transaction month query.");
+        return listFinanceTransactionMonths(app.db, request.authUser.userId, query);
     });
     app.get("/transactions/:transactionId", { preHandler: app.authenticate }, async (request) => {
         return getFinanceTransaction(app.db, request.authUser.userId, request.params.transactionId);

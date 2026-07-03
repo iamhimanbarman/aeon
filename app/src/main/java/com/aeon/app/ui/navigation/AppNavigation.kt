@@ -1,12 +1,22 @@
 package com.aeon.app.ui.navigation
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -14,7 +24,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -23,6 +36,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.aeon.app.core.notifications.AeonNotificationDeepLinkHandler
 import com.aeon.app.ui.components.layout.AeonBrandTopAppBar
+import com.aeon.app.ui.components.layout.LocalAeonAdditionalBottomPadding
 import com.aeon.app.ui.components.layout.AeonScaffold
 import com.aeon.app.ui.components.layout.AeonScaffoldConfig
 import com.aeon.app.ui.components.layout.AeonTopBarMenuDestination
@@ -30,8 +44,11 @@ import com.aeon.app.ui.screens.finance.FinanceTopBarActions
 import com.aeon.app.ui.screens.finance.FinanceTopBarConfig
 import com.aeon.app.ui.screens.focus.FocusTopBarActions
 import com.aeon.app.ui.screens.focus.FocusTopBarConfig
+import com.aeon.app.ui.screens.today.TodayTopBarConfig
 import com.aeon.app.ui.theme.AeonDuration
 import com.aeon.app.ui.theme.AeonEasing
+
+private const val NAVIGATION_CLICK_GUARD_MS = 320L
 
 /*
  * AEON APP NAVIGATION
@@ -76,33 +93,124 @@ fun AppNavigation(
         navController = navController,
         startDestination = config.startDestination
     )
+    val motionScale = rememberAeonMotionScale()
+    var todayTopBarConfig by remember { mutableStateOf<TodayTopBarConfig?>(null) }
     var focusTopBarConfig by remember { mutableStateOf<FocusTopBarConfig?>(null) }
     var financeTopBarConfig by remember { mutableStateOf<FinanceTopBarConfig?>(null) }
 
-    LaunchedEffect(notificationDeepLinkHandler) {
+    LaunchedEffect(notificationDeepLinkHandler, navigationState) {
         notificationDeepLinkHandler?.events?.collect { event ->
             val route = event.route
 
-            if (!route.isNullOrBlank()) {
-                navController.navigate(route) {
-                    launchSingleTop = true
-                    restoreState = true
-                }
+            if (route.normalizedNavigationRoute().isBlank()) {
+                return@collect
             }
+
+            navigationState.navigateToRoute(route.orEmpty())
         }
     }
 
     val currentRoute = navigationState.currentRoute
-    val currentTopLevelDestination = currentRoute.currentTopLevelDestination()
+    val currentNormalizedRoute = currentRoute.normalizedNavigationRoute()
+    val currentTopLevelDestination = currentNormalizedRoute.currentTopLevelDestination()
     val shouldShowTopBar = currentTopLevelDestination != null &&
-        currentRoute?.shouldShowAppShellTopBar() == true
+        currentNormalizedRoute.shouldShowAppShellTopBar()
 
     val shouldShowBottomBar = config.showBottomNavigation &&
         if (config.showBottomNavigationOnlyOnTopLevel) {
-            currentRoute?.shouldShowBottomBar() == true
+            currentNormalizedRoute.shouldShowBottomBar()
         } else {
             true
         }
+    val overlayBottomPadding = if (shouldShowBottomBar) 84.dp else 0.dp
+    val topBarEnterTransition = if (motionScale.enabled) {
+        fadeIn(
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Fast,
+                motionScale = motionScale,
+                easing = AeonEasing.Decelerate
+            )
+        ) + slideInVertically(
+            initialOffsetY = { -it / 4 },
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Normal,
+                motionScale = motionScale,
+                easing = AeonEasing.Decelerate
+            )
+        )
+    } else {
+        EnterTransition.None
+    }
+    val topBarExitTransition = if (motionScale.enabled) {
+        fadeOut(
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Fast,
+                motionScale = motionScale,
+                easing = AeonEasing.Accelerate
+            )
+        ) + slideOutVertically(
+            targetOffsetY = { -it / 6 },
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Fast,
+                motionScale = motionScale,
+                easing = AeonEasing.Accelerate
+            )
+        )
+    } else {
+        ExitTransition.None
+    }
+    val bottomBarEnterTransition = if (motionScale.enabled) {
+        fadeIn(
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Fast,
+                motionScale = motionScale,
+                easing = AeonEasing.Decelerate
+            )
+        ) + slideInVertically(
+            initialOffsetY = { it / 3 },
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Normal,
+                motionScale = motionScale,
+                easing = AeonEasing.Decelerate
+            )
+        ) + scaleIn(
+            initialScale = 0.985f,
+            transformOrigin = TransformOrigin(0.5f, 1f),
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Normal,
+                motionScale = motionScale,
+                easing = AeonEasing.Decelerate
+            )
+        )
+    } else {
+        EnterTransition.None
+    }
+    val bottomBarExitTransition = if (motionScale.enabled) {
+        fadeOut(
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Fast,
+                motionScale = motionScale,
+                easing = AeonEasing.Accelerate
+            )
+        ) + slideOutVertically(
+            targetOffsetY = { it / 4 },
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Fast,
+                motionScale = motionScale,
+                easing = AeonEasing.Accelerate
+            )
+        ) + scaleOut(
+            targetScale = 0.985f,
+            transformOrigin = TransformOrigin(0.5f, 1f),
+            animationSpec = aeonShellTween(
+                baseDurationMillis = AeonDuration.Fast,
+                motionScale = motionScale,
+                easing = AeonEasing.Accelerate
+            )
+        )
+    } else {
+        ExitTransition.None
+    }
 
     AeonScaffold(
         modifier = modifier,
@@ -115,32 +223,37 @@ fun AppNavigation(
         topBar = {
             AnimatedVisibility(
                 visible = shouldShowTopBar,
-                enter = fadeIn(tween(AeonDuration.Fast)),
-                exit = fadeOut(tween(AeonDuration.Fast))
+                enter = topBarEnterTransition,
+                exit = topBarExitTransition
             ) {
                 AeonBrandTopAppBar(
                     onNotificationsClick = {
-                        navigationState.navigateToRoute("notification_inbox")
+                        navigationState.navigateToDestination(NotificationInboxDestination)
                     },
                     onMenuDestinationClick = { destination ->
                         when (destination) {
                             AeonTopBarMenuDestination.Settings -> navigationState.navigateToSettings()
-                            AeonTopBarMenuDestination.DailyBrief -> navigationState.navigateToRoute("daily_brief")
-                            AeonTopBarMenuDestination.Goals -> navigationState.navigateToRoute("goals")
-                            AeonTopBarMenuDestination.Health -> navigationState.navigateToRoute("health")
-                            AeonTopBarMenuDestination.Journal -> navigationState.navigateToRoute("journal")
-                            AeonTopBarMenuDestination.Mood -> navigationState.navigateToRoute("mood")
-                            AeonTopBarMenuDestination.Tasks -> navigationState.navigateToRoute("tasks")
+                            AeonTopBarMenuDestination.DailyBrief -> {
+                                navigationState.navigateToDestination(DailyBriefDestination)
+                            }
+                            AeonTopBarMenuDestination.Goals -> {
+                                navigationState.navigateToDestination(GoalsDestination)
+                            }
+                            AeonTopBarMenuDestination.Health -> {
+                                navigationState.navigateToDestination(HealthDestination)
+                            }
+                            AeonTopBarMenuDestination.Journal -> {
+                                navigationState.navigateToDestination(JournalDestination)
+                            }
+                            AeonTopBarMenuDestination.Mood -> {
+                                navigationState.navigateToDestination(MoodDestination)
+                            }
+                            AeonTopBarMenuDestination.Tasks -> {
+                                navigationState.navigateToDestination(TasksDestination)
+                            }
                         }
                     },
-                    titleOverride = if (
-                        currentTopLevelDestination == AeonTopLevelDestinations.Focus ||
-                        currentTopLevelDestination == AeonTopLevelDestinations.Finance
-                    ) {
-                        currentTopLevelDestination.label
-                    } else {
-                        null
-                    },
+                    titleOverride = currentTopLevelDestination.shellTopBarTitle(),
                     actionsOverride = when (currentTopLevelDestination) {
                         AeonTopLevelDestinations.Focus -> {
                             {
@@ -159,61 +272,57 @@ fun AppNavigation(
                 )
             }
         },
-        bottomBar = {
-            AnimatedVisibility(
-                visible = shouldShowBottomBar,
-                enter = fadeIn(
-                    animationSpec = tween(
-                        durationMillis = AeonDuration.Normal,
-                        easing = AeonEasing.Decelerate
-                    )
-                ) + slideInVertically(
-                    initialOffsetY = { it / 2 },
-                    animationSpec = tween(
-                        durationMillis = AeonDuration.Normal,
-                        easing = AeonEasing.Decelerate
-                    )
-                ),
-                exit = fadeOut(
-                    animationSpec = tween(
-                        durationMillis = AeonDuration.Fast,
-                        easing = AeonEasing.Accelerate
-                    )
-                ) + slideOutVertically(
-                    targetOffsetY = { it / 2 },
-                    animationSpec = tween(
-                        durationMillis = AeonDuration.Fast,
-                        easing = AeonEasing.Accelerate
-                    )
-                )
-            ) {
-                AeonBottomNavigation(
-                    currentRoute = currentRoute,
-                    style = config.bottomNavigationStyle,
-                    safeArea = false,
-                    onDestinationClick = { destination ->
-                        navigationState.navigateToTopLevelDestination(
-                            destination = destination,
-                            restoreState = config.restoreTopLevelState,
-                            launchSingleTop = config.launchSingleTop
-                        )
-                    }
-                )
-            }
-        }
+        bottomBar = {}
     ) { _ ->
-        AppNavGraph(
-            navController = navController,
-            startDestination = config.startDestination,
-            modifier = Modifier,
-            navigationState = navigationState,
-            onFocusTopBarConfigChanged = { nextConfig ->
-                focusTopBarConfig = nextConfig
-            },
-            onFinanceTopBarConfigChanged = { nextConfig ->
-                financeTopBarConfig = nextConfig
-            }
-        )
+        CompositionLocalProvider(
+            LocalAeonAdditionalBottomPadding provides overlayBottomPadding
+        ) {
+            AppNavGraph(
+                navController = navController,
+                startDestination = config.startDestination,
+                modifier = Modifier,
+                motionScale = motionScale,
+                navigationState = navigationState,
+                onTodayTopBarConfigChanged = { nextConfig ->
+                    if (!nextConfig.hasSameShellContentAs(todayTopBarConfig)) {
+                        todayTopBarConfig = nextConfig
+                    }
+                },
+                onFocusTopBarConfigChanged = { nextConfig ->
+                    if (!nextConfig.hasSameShellContentAs(focusTopBarConfig)) {
+                        focusTopBarConfig = nextConfig
+                    }
+                },
+                onFinanceTopBarConfigChanged = { nextConfig ->
+                    if (!nextConfig.hasSameShellContentAs(financeTopBarConfig)) {
+                        financeTopBarConfig = nextConfig
+                    }
+                }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = shouldShowBottomBar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .offset(y = 6.dp),
+            enter = bottomBarEnterTransition,
+            exit = bottomBarExitTransition
+        ) {
+            AeonBottomNavigation(
+                currentRoute = currentRoute,
+                style = config.bottomNavigationStyle,
+                safeArea = false,
+                onDestinationClick = { destination ->
+                    navigationState.navigateToTopLevelDestination(
+                        destination = destination,
+                        restoreState = config.restoreTopLevelState,
+                        launchSingleTop = config.launchSingleTop
+                    )
+                }
+            )
+        }
     }
 }
 
@@ -248,6 +357,7 @@ class AeonNavigationState(
     val navController: NavHostController,
     val startDestination: String
 ) {
+    private var lastNavigationAtMillis: Long = 0L
 
     val currentBackStackEntry: NavBackStackEntry?
         @Composable get() {
@@ -280,9 +390,12 @@ class AeonNavigationState(
         restoreState: Boolean = true,
         launchSingleTop: Boolean = true
     ) {
-        val current = navController.currentDestination?.route
+        val currentBaseRoute = navController.currentDestination
+            ?.route
+            .normalizedNavigationBaseRoute()
 
-        if (destination.destination.matchesRoute(current)) return
+        if (destination.baseRoute == currentBaseRoute) return
+        if (!acceptNavigation()) return
 
         navController.navigate(destination.route) {
             popUpTo(navController.graph.findStartDestination().id) {
@@ -310,11 +423,18 @@ class AeonNavigationState(
         route: String,
         launchSingleTop: Boolean = true
     ) {
-        val current = navController.currentDestination?.route
+        val normalizedTargetRoute = route.normalizedNavigationRoute()
 
-        if (current == route && launchSingleTop) return
+        if (normalizedTargetRoute.isBlank()) return
 
-        navController.navigate(route) {
+        val currentRoute = navController.currentDestination
+            ?.route
+            .normalizedNavigationRoute()
+
+        if (launchSingleTop && currentRoute == normalizedTargetRoute) return
+        if (!acceptNavigation()) return
+
+        navController.navigate(route.trim()) {
             this.launchSingleTop = launchSingleTop
         }
     }
@@ -323,7 +443,9 @@ class AeonNavigationState(
     fun replaceWithRoute(
         route: String
     ) {
-        navController.navigate(route) {
+        if (route.normalizedNavigationRoute().isBlank()) return
+
+        navController.navigate(route.trim()) {
             popUpTo(navController.graph.findStartDestination().id) {
                 inclusive = true
             }
@@ -515,7 +637,50 @@ class AeonNavigationState(
         navigateToRoute(AboutAeonDestination.route)
     }
 
+    private fun acceptNavigation(): Boolean {
+        val now = SystemClock.elapsedRealtime()
 
+        if (now - lastNavigationAtMillis < NAVIGATION_CLICK_GUARD_MS) {
+            return false
+        }
+
+        lastNavigationAtMillis = now
+        return true
+    }
+
+}
+
+
+private fun TodayTopBarConfig.hasSameShellContentAs(
+    current: TodayTopBarConfig?
+): Boolean {
+    return current?.dateLabel == dateLabel
+}
+
+
+private fun FocusTopBarConfig.hasSameShellContentAs(
+    current: FocusTopBarConfig?
+): Boolean {
+    return current?.selectedDate == selectedDate
+}
+
+
+private fun FinanceTopBarConfig.hasSameShellContentAs(
+    current: FinanceTopBarConfig?
+): Boolean {
+    return current?.monthLabel == monthLabel
+}
+
+
+private fun AeonTopLevelDestination?.shellTopBarTitle(): String? {
+    return when (this) {
+        AeonTopLevelDestinations.Today -> "Aeon"
+        AeonTopLevelDestinations.Track -> "Track"
+        AeonTopLevelDestinations.Focus -> "Focus"
+        AeonTopLevelDestinations.Insights -> "Insight"
+        AeonTopLevelDestinations.Finance -> "Finance"
+        else -> null
+    }
 }
 
 
@@ -527,11 +692,15 @@ fun NavController.navigateSafely(
     route: String,
     launchSingleTop: Boolean = true
 ) {
-    val currentRoute = currentDestination?.route
+    val normalizedTargetRoute = route.normalizedNavigationRoute()
 
-    if (launchSingleTop && currentRoute == route) return
+    if (normalizedTargetRoute.isBlank()) return
 
-    navigate(route) {
+    val currentRoute = currentDestination?.route.normalizedNavigationRoute()
+
+    if (launchSingleTop && currentRoute == normalizedTargetRoute) return
+
+    navigate(route.trim()) {
         this.launchSingleTop = launchSingleTop
     }
 }
@@ -540,7 +709,9 @@ fun NavController.navigateSafely(
 fun NavController.navigateAndClearBackStack(
     route: String
 ) {
-    navigate(route) {
+    if (route.normalizedNavigationRoute().isBlank()) return
+
+    navigate(route.trim()) {
         popUpTo(graph.findStartDestination().id) {
             inclusive = true
         }
@@ -554,7 +725,12 @@ fun NavController.navigateToTopLevelRoute(
     route: String,
     restoreState: Boolean = true
 ) {
-    navigate(route) {
+    val normalizedTargetRoute = route.normalizedNavigationBaseRoute()
+
+    if (normalizedTargetRoute.isBlank()) return
+    if (currentDestination?.route.normalizedNavigationBaseRoute() == normalizedTargetRoute) return
+
+    navigate(route.trim()) {
         popUpTo(graph.findStartDestination().id) {
             saveState = restoreState
         }
@@ -562,4 +738,24 @@ fun NavController.navigateToTopLevelRoute(
         launchSingleTop = true
         this.restoreState = restoreState
     }
+}
+
+private fun String?.normalizedNavigationBaseRoute(): String {
+    return normalizedNavigationRoute().substringBefore("/")
+}
+
+
+private fun <T> aeonShellTween(
+    baseDurationMillis: Int,
+    motionScale: AeonMotionScale,
+    easing: Easing
+): FiniteAnimationSpec<T> {
+    val durationMillis = (baseDurationMillis * motionScale.scale)
+        .toInt()
+        .coerceAtLeast(1)
+
+    return tween(
+        durationMillis = durationMillis,
+        easing = easing
+    )
 }

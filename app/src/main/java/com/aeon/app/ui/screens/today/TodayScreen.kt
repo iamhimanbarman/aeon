@@ -20,9 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +58,7 @@ import com.aeon.app.ui.components.core.AeonChip
 import com.aeon.app.ui.components.core.AeonChipSize
 import com.aeon.app.ui.components.core.AeonChipVariant
 import com.aeon.app.ui.components.layout.AeonScreen
+import com.aeon.app.ui.components.layout.AeonScreenConfig
 import com.aeon.app.ui.components.layout.aeonPremiumBackgroundBrush
 import com.aeon.app.ui.theme.AeonTextStyles
 import com.aeon.app.ui.theme.AeonThemeTokens
@@ -62,6 +68,102 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+data class TodayTopBarConfig(
+    val dateLabel: String,
+    val onOpenNotifications: () -> Unit,
+    val onOpenTrack: () -> Unit,
+    val onOpenInsights: () -> Unit,
+    val onStartFocus: () -> Unit,
+    val onAddTask: () -> Unit,
+    val onOpenAiChat: () -> Unit
+)
+
+@Composable
+fun TodayTopBarActions(
+    config: TodayTopBarConfig
+) {
+    var actionsExpanded by remember { mutableStateOf(false) }
+    val colors = AeonThemeTokens.colors
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AeonChip(
+            text = config.dateLabel,
+            variant = AeonChipVariant.Premium,
+            size = AeonChipSize.Compact
+        )
+
+        AeonChip(
+            text = "Alerts",
+            variant = AeonChipVariant.Outline,
+            size = AeonChipSize.Compact,
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.NotificationsNone,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+            },
+            onClick = config.onOpenNotifications
+        )
+
+        Box {
+            IconButton(onClick = { actionsExpanded = true }) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreVert,
+                    contentDescription = "Home actions",
+                    tint = colors.textPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            DropdownMenu(
+                expanded = actionsExpanded,
+                onDismissRequest = { actionsExpanded = false },
+                containerColor = colors.surfaceElevated
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Track") },
+                    onClick = {
+                        actionsExpanded = false
+                        config.onOpenTrack()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Insights") },
+                    onClick = {
+                        actionsExpanded = false
+                        config.onOpenInsights()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Start focus") },
+                    onClick = {
+                        actionsExpanded = false
+                        config.onStartFocus()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Add task") },
+                    onClick = {
+                        actionsExpanded = false
+                        config.onAddTask()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("AI chat") },
+                    onClick = {
+                        actionsExpanded = false
+                        config.onOpenAiChat()
+                    }
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun AeonTodayRoute(
@@ -74,71 +176,49 @@ fun AeonTodayRoute(
     onOpenHabit: (String) -> Unit = {},
     onOpenTask: (String) -> Unit = {},
     onOpenAiChat: () -> Unit = {},
+    onTopBarConfigChanged: (TodayTopBarConfig) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val viewModel = aeonViewModel<AeonFocusViewModel>()
-    val viewState by viewModel.uiState.collectAsStateWithLifecycle()
     val today = remember { LocalDate.now() }
-
-    LaunchedEffect(today) {
-        viewModel.setRoutineDate(today)
-    }
-
-    val occurrences = remember(viewState.occurrences) {
-        viewState.occurrences.sortedWith(
-            compareBy<FocusRoutineOccurrenceEntity> { it.plannedStartAt ?: Instant.MAX }
-                .thenBy { it.position }
+    val topBarConfig = remember(
+        today,
+        onOpenNotifications,
+        onOpenTrack,
+        onOpenInsights,
+        onStartFocus,
+        onAddTask,
+        onOpenAiChat
+    ) {
+        TodayTopBarConfig(
+            dateLabel = today.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())),
+            onOpenNotifications = onOpenNotifications,
+            onOpenTrack = onOpenTrack,
+            onOpenInsights = onOpenInsights,
+            onStartFocus = onStartFocus,
+            onAddTask = onAddTask,
+            onOpenAiChat = onOpenAiChat
         )
     }
-    var now by remember { mutableStateOf(Instant.now()) }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = Instant.now()
-            delay(60_000)
-        }
-    }
-    val current = remember(occurrences, now) {
-        FocusRoutineResolver.current(occurrences, now)
-            ?: occurrences.firstOrNull {
-                it.status == FocusRoutineStatusStorage.Current
-            }
-    }
-    val future = remember(occurrences, now, current?.id) {
-        occurrences
-            .filter { occurrence ->
-                occurrence.id != current?.id &&
-                    occurrence.status == FocusRoutineStatusStorage.Upcoming &&
-                    (occurrence.plannedStartAt ?: Instant.MAX).isAfter(now)
-            }
-            .take(2)
-    }
-    val previousOpen = remember(occurrences, now) {
-        occurrences
-            .filter { occurrence ->
-                occurrence.status !in setOf(
-                    FocusRoutineStatusStorage.Done,
-                    FocusRoutineStatusStorage.Missed
-                ) &&
-                    occurrence.plannedEndAt?.isBefore(now) == true
-            }
-            .sortedByDescending { it.plannedEndAt }
+    LaunchedEffect(topBarConfig) {
+        onTopBarConfigChanged(topBarConfig)
     }
 
-    TodayRoutineScreen(
+    HomeEmptyScreen(modifier = modifier)
+}
+
+@Composable
+private fun HomeEmptyScreen(
+    modifier: Modifier = Modifier
+) {
+    AeonScreen(
         modifier = modifier,
-        today = today,
-        current = current,
-        future = future,
-        previousOpen = previousOpen,
-        allCount = occurrences.size,
-        onCreateRoutine = onStartFocus,
-        onStart = viewModel::startRoutine,
-        onDone = viewModel::completeRoutine,
-        onMiss = viewModel::missRoutine,
-        onOpenTask = onOpenTask,
-        onOpenAiChat = onOpenAiChat
-    )
+        config = AeonScreenConfig(safeDrawing = false),
+        backgroundBrush = aeonPremiumBackgroundBrush(),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        // Intentionally empty: Home content has been cleared.
+    }
 }
 
 @Composable

@@ -8,6 +8,8 @@ val localProperties = Properties().apply {
 
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
+val defaultAuthBaseUrl = "https://aeon-9cds.onrender.com"
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -45,7 +47,7 @@ android {
             buildConfigField(
                 "String",
                 "AUTH_BASE_URL",
-                localProperties.getProperty("AUTH_BASE_URL", "http://10.0.2.2:10000").asBuildConfigString()
+                localProperties.getProperty("AUTH_BASE_URL", defaultAuthBaseUrl).asBuildConfigString()
             )
             buildConfigField(
                 "String",
@@ -59,7 +61,11 @@ android {
             isShrinkResources = true
             buildConfigField("String", "BEDROCK_API_KEY", "\"\"")
             buildConfigField("String", "BEDROCK_REGION", "\"us-east-1\"")
-            buildConfigField("String", "AUTH_BASE_URL", "\"\"")
+            buildConfigField(
+                "String",
+                "AUTH_BASE_URL",
+                localProperties.getProperty("AUTH_BASE_URL", defaultAuthBaseUrl).asBuildConfigString()
+            )
             buildConfigField("String", "AUTH_MOBILE_REDIRECT_URI", "\"aeon://auth/callback\"")
             buildConfigField("boolean", "DIRECT_CLOUD_AI_ENABLED", "false")
             proguardFiles(

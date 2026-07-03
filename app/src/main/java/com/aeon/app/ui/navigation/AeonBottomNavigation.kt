@@ -2,13 +2,17 @@ package com.aeon.app.ui.navigation
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,8 +20,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -29,9 +36,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -40,42 +52,29 @@ import com.aeon.app.ui.theme.AeonDuration
 import com.aeon.app.ui.theme.AeonEasing
 import com.aeon.app.ui.theme.AeonMotionAlpha
 import com.aeon.app.ui.theme.AeonSpacing
+import com.aeon.app.ui.theme.AeonSpring
 import com.aeon.app.ui.theme.AeonTextStyles
 import com.aeon.app.ui.theme.AeonThemeTokens
 
 /*
- * AEON PREMIUM BOTTOM NAVIGATION
+ * AEON ULTRA-PREMIUM BOTTOM NAVIGATION
  *
  * Purpose:
  * Main mobile navigation for Aeon.
  *
- * Tabs:
- * - Today
- * - Track
- * - Focus
- * - Insights
- * - AI
- *
- * Senior UI/UX Rule:
- * Bottom navigation should feel calm, premium, thumb-friendly, and stable.
- * It should not fight with content. It should guide the user quietly.
+ * Motion philosophy:
+ * - Calm over flashy.
+ * - Clear selected state without visual noise.
+ * - Thumb-friendly and stable.
+ * - Subtle haptics only when changing destination.
+ * - Lightweight animations suitable for production.
  */
-
-
-// ----------------------------------------------------
-// Bottom Navigation Style
-// ----------------------------------------------------
 
 enum class AeonBottomNavigationStyle {
     Floating,
     Attached,
     Minimal
 }
-
-
-// ----------------------------------------------------
-// Bottom Navigation Token
-// ----------------------------------------------------
 
 @Immutable
 private data class AeonBottomNavigationToken(
@@ -85,13 +84,9 @@ private data class AeonBottomNavigationToken(
     val itemMinHeight: Dp,
     val symbolSize: Dp,
     val badgeSize: Dp,
-    val selectedIndicatorSize: Dp
+    val selectedIndicatorSize: Dp,
+    val maxContainerWidth: Dp
 )
-
-
-// ----------------------------------------------------
-// Main Bottom Navigation
-// ----------------------------------------------------
 
 @Composable
 fun AeonBottomNavigation(
@@ -102,10 +97,33 @@ fun AeonBottomNavigation(
     style: AeonBottomNavigationStyle = AeonBottomNavigationStyle.Floating,
     showLabels: Boolean = true,
     safeArea: Boolean = true,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    enableHaptics: Boolean = true
 ) {
     val colors = AeonThemeTokens.colors
     val token = aeonBottomNavigationToken(style)
+    val normalizedCurrentRoute = currentRoute.normalizedBottomNavigationRoute()
+
+    val horizontalPadding = when (style) {
+        AeonBottomNavigationStyle.Floating -> AeonSpacing.Medium
+        AeonBottomNavigationStyle.Attached -> AeonSpacing.None
+        AeonBottomNavigationStyle.Minimal -> AeonSpacing.Large
+    }
+
+    val topPadding = when (style) {
+        AeonBottomNavigationStyle.Floating -> AeonSpacing.Small
+        AeonBottomNavigationStyle.Attached -> AeonSpacing.None
+        AeonBottomNavigationStyle.Minimal -> AeonSpacing.Small
+    }
+
+    val bottomPadding = when (style) {
+        AeonBottomNavigationStyle.Floating -> {
+            if (safeArea) AeonSpacing.Small else AeonSpacing.None
+        }
+
+        AeonBottomNavigationStyle.Attached -> AeonSpacing.None
+        AeonBottomNavigationStyle.Minimal -> AeonSpacing.Small
+    }
 
     val containerColor by animateColorAsState(
         targetValue = when (style) {
@@ -125,81 +143,83 @@ fun AeonBottomNavigation(
             durationMillis = AeonDuration.Normal,
             easing = AeonEasing.Standard
         ),
-        label = "aeon_bottom_nav_container"
+        label = "aeon_bottom_nav_container_color"
     )
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                start = when (style) {
-                    AeonBottomNavigationStyle.Floating -> AeonSpacing.Medium
-                    AeonBottomNavigationStyle.Attached -> AeonSpacing.None
-                    AeonBottomNavigationStyle.Minimal -> AeonSpacing.Large
-                },
-                end = when (style) {
-                    AeonBottomNavigationStyle.Floating -> AeonSpacing.Medium
-                    AeonBottomNavigationStyle.Attached -> AeonSpacing.None
-                    AeonBottomNavigationStyle.Minimal -> AeonSpacing.Large
-                },
-                top = when (style) {
-                    AeonBottomNavigationStyle.Floating -> AeonSpacing.Small
-                    AeonBottomNavigationStyle.Attached -> AeonSpacing.None
-                    AeonBottomNavigationStyle.Minimal -> AeonSpacing.Small
-                },
-                bottom = when (style) {
-                    AeonBottomNavigationStyle.Floating -> if (safeArea) AeonSpacing.Small else AeonSpacing.XSmall
-                    AeonBottomNavigationStyle.Attached -> AeonSpacing.None
-                    AeonBottomNavigationStyle.Minimal -> AeonSpacing.Small
-                }
+                start = horizontalPadding,
+                end = horizontalPadding,
+                top = topPadding,
+                bottom = bottomPadding
             ),
-        shape = when (style) {
-            AeonBottomNavigationStyle.Floating -> AeonComponentShapes.CardHero
-            AeonBottomNavigationStyle.Attached -> AeonComponentShapes.BottomNavigation
-            AeonBottomNavigationStyle.Minimal -> AeonComponentShapes.ButtonPill
-        },
-        color = containerColor,
-        border = null,
-        shadowElevation = when (style) {
-            AeonBottomNavigationStyle.Floating -> 18.dp
-            AeonBottomNavigationStyle.Attached -> 0.dp
-            AeonBottomNavigationStyle.Minimal -> 10.dp
-        },
-        tonalElevation = when (style) {
-            AeonBottomNavigationStyle.Floating -> 6.dp
-            AeonBottomNavigationStyle.Attached -> 2.dp
-            AeonBottomNavigationStyle.Minimal -> 3.dp
-        }
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = token.minHeight)
-                .padding(token.containerPadding),
-            horizontalArrangement = Arrangement.spacedBy(AeonSpacing.XSmall),
-            verticalAlignment = Alignment.CenterVertically
+        val containerModifier = when (style) {
+            AeonBottomNavigationStyle.Floating,
+            AeonBottomNavigationStyle.Minimal -> {
+                Modifier
+                    .widthIn(max = token.maxContainerWidth)
+                    .fillMaxWidth()
+            }
+
+            AeonBottomNavigationStyle.Attached -> Modifier.fillMaxWidth()
+        }
+
+        AeonBottomNavigationGlow(
+            modifier = containerModifier,
+            visible = style == AeonBottomNavigationStyle.Floating
         ) {
-            destinations.forEach { destination ->
-                AeonBottomNavigationItem(
-                    destination = destination,
-                    selected = destination.isSelected(currentRoute),
-                    enabled = enabled,
-                    showLabel = showLabels,
-                    token = token,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        onDestinationClick(destination)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = when (style) {
+                    AeonBottomNavigationStyle.Floating -> AeonComponentShapes.CardHero
+                    AeonBottomNavigationStyle.Attached -> AeonComponentShapes.BottomNavigation
+                    AeonBottomNavigationStyle.Minimal -> AeonComponentShapes.ButtonPill
+                },
+                color = containerColor,
+                border = aeonBottomNavigationBorder(style),
+                shadowElevation = when (style) {
+                    AeonBottomNavigationStyle.Floating -> 10.dp
+                    AeonBottomNavigationStyle.Attached -> 0.dp
+                    AeonBottomNavigationStyle.Minimal -> 6.dp
+                },
+                tonalElevation = when (style) {
+                    AeonBottomNavigationStyle.Floating -> 4.dp
+                    AeonBottomNavigationStyle.Attached -> 2.dp
+                    AeonBottomNavigationStyle.Minimal -> 2.dp
+                }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = token.minHeight)
+                        .padding(token.containerPadding),
+                    horizontalArrangement = Arrangement.spacedBy(AeonSpacing.XSmall),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    destinations.forEach { destination ->
+                        AeonBottomNavigationItem(
+                            destination = destination,
+                            selected = destination.isSelected(normalizedCurrentRoute),
+                            enabled = enabled,
+                            showLabel = showLabels,
+                            token = token,
+                            style = style,
+                            enableHaptics = enableHaptics,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onDestinationClick(destination)
+                            }
+                        )
                     }
-                )
+                }
             }
         }
     }
 }
-
-
-// ----------------------------------------------------
-// Navigation Item
-// ----------------------------------------------------
 
 @Composable
 private fun AeonBottomNavigationItem(
@@ -208,27 +228,15 @@ private fun AeonBottomNavigationItem(
     enabled: Boolean,
     showLabel: Boolean,
     token: AeonBottomNavigationToken,
+    style: AeonBottomNavigationStyle,
+    enableHaptics: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val colors = AeonThemeTokens.colors
     val accentColor = aeonBottomNavigationAccentColor(destination.accent)
+    val selectionColor = aeonBottomNavigationSelectionColor()
     val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = when {
-            !enabled -> 1f
-            pressed -> 0.94f
-            selected -> 1.02f
-            else -> 1f
-        },
-        animationSpec = tween(
-            durationMillis = AeonDuration.Fast,
-            easing = AeonEasing.Emphasized
-        ),
-        label = "aeon_bottom_nav_item_scale"
-    )
 
     val itemAlpha by animateFloatAsState(
         targetValue = if (enabled) 1f else AeonMotionAlpha.Disabled,
@@ -239,97 +247,146 @@ private fun AeonBottomNavigationItem(
         label = "aeon_bottom_nav_item_alpha"
     )
 
-    val contentColor by animateColorAsState(
+    val iconColor by animateColorAsState(
         targetValue = when {
-            selected -> accentColor
+            selected -> selectionColor
             else -> colors.textTertiary
         },
         animationSpec = tween(
             durationMillis = AeonDuration.Normal,
             easing = AeonEasing.Standard
         ),
-        label = "aeon_bottom_nav_item_content"
+        label = "aeon_bottom_nav_item_icon_color"
     )
 
-    Surface(
-        onClick = {
-            if (!selected) onClick()
+    val labelColor by animateColorAsState(
+        targetValue = when {
+            selected -> colors.textPrimary
+            else -> colors.textTertiary
         },
-        modifier = modifier
-            .scale(scale)
-            .alpha(itemAlpha)
-            .defaultMinSize(minHeight = token.itemMinHeight),
-        enabled = enabled,
-        shape = AeonComponentShapes.BottomNavItemSelected,
-        color = Color.Transparent,
-        contentColor = contentColor,
-        interactionSource = interactionSource
-    ) {
-        Box {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(token.itemPadding),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(AeonSpacing.XSmall)
-            ) {
-                AeonBottomNavigationSymbol(
-                    destination = destination,
-                    selected = selected,
-                    color = contentColor,
-                    accentColor = accentColor,
-                    token = token
-                )
+        animationSpec = tween(
+            durationMillis = AeonDuration.Normal,
+            easing = AeonEasing.Standard
+        ),
+        label = "aeon_bottom_nav_item_label_color"
+    )
 
-                if (showLabel) {
-                    Text(
-                        text = destination.shortLabel,
-                        style = if (selected) {
-                            AeonTextStyles.BottomNavSelected
-                        } else {
-                            AeonTextStyles.BottomNavUnselected
-                        },
-                        color = contentColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+    Box(
+        modifier = modifier
+            .alpha(itemAlpha)
+            .defaultMinSize(minHeight = token.itemMinHeight)
+            .semantics(mergeDescendants = true) {
+                role = Role.Tab
+                contentDescription = destination.contentDescription
+                this.selected = selected
+                stateDescription = if (selected) "Selected" else "Not selected"
+            }
+            .clickable(
+                enabled = enabled && !selected,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab
+            ) {
+                if (!enableHaptics) {
+                    onClick()
+                    return@clickable
                 }
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(token.itemPadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(AeonSpacing.XXSmall)
+        ) {
+            AeonBottomNavigationSymbol(
+                destination = destination,
+                selected = selected,
+                enabled = enabled,
+                color = iconColor,
+                accentColor = accentColor,
+                selectionColor = selectionColor,
+                token = token,
+                style = style
+            )
+
+            if (showLabel) {
+                AeonBottomNavigationLabel(
+                    text = destination.shortLabel,
+                    selected = selected,
+                    enabled = enabled,
+                    color = labelColor
+                )
             }
         }
     }
 }
 
-
-// ----------------------------------------------------
-// Symbol
-// ----------------------------------------------------
-
 @Composable
 private fun AeonBottomNavigationSymbol(
     destination: AeonTopLevelDestination,
     selected: Boolean,
+    enabled: Boolean,
     color: Color,
     accentColor: Color,
-    token: AeonBottomNavigationToken
+    selectionColor: Color,
+    token: AeonBottomNavigationToken,
+    style: AeonBottomNavigationStyle
 ) {
+    val colors = AeonThemeTokens.colors
     val icon = destination.iconForSelection(selected)
 
+    val capsuleWidth by animateDpAsState(
+        targetValue = if (selected) token.selectedIndicatorSize + 14.dp else token.selectedIndicatorSize,
+        animationSpec = tween(
+            durationMillis = AeonDuration.Normal,
+            easing = AeonEasing.Standard
+        ),
+        label = "aeon_bottom_nav_symbol_capsule_width"
+    )
+
+    val selectedSurfaceColor by animateColorAsState(
+        targetValue = if (selected) {
+            selectionColor.copy(alpha = if (colors.isDark) 0.24f else 0.18f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(
+            durationMillis = AeonDuration.Normal,
+            easing = AeonEasing.Standard
+        ),
+        label = "aeon_bottom_nav_symbol_surface_color"
+    )
+
     Box(
-        modifier = Modifier.size(token.symbolSize),
+        modifier = Modifier
+            .width(capsuleWidth + 10.dp)
+            .height(token.selectedIndicatorSize + 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            modifier = Modifier.size(token.symbolSize),
-            shape = AeonComponentShapes.IconButtonCircle,
-            color = if (selected) accentColor.copy(alpha = 0.14f) else Color.Transparent,
+            modifier = Modifier
+                .width(capsuleWidth)
+                .height(token.selectedIndicatorSize),
+            shape = AeonComponentShapes.ButtonPill,
+            color = selectedSurfaceColor,
             contentColor = color
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
-                    contentDescription = destination.contentDescription,
+                    contentDescription = null,
                     tint = color,
-                    modifier = Modifier.size(token.symbolSize - 4.dp)
+                    modifier = Modifier.size(
+                        when (style) {
+                            AeonBottomNavigationStyle.Floating -> token.symbolSize
+                            AeonBottomNavigationStyle.Attached -> token.symbolSize
+                            AeonBottomNavigationStyle.Minimal -> token.symbolSize - 1.dp
+                        }
+                    )
                 )
             }
         }
@@ -338,54 +395,112 @@ private fun AeonBottomNavigationSymbol(
             badgeCount = destination.badgeCount,
             hasNewContent = destination.hasNewContent,
             accentColor = accentColor,
+            token = token,
             modifier = Modifier.align(Alignment.TopEnd)
         )
     }
 }
 
+@Composable
+private fun AeonBottomNavigationLabel(
+    text: String,
+    selected: Boolean,
+    enabled: Boolean,
+    color: Color
+) {
+    val labelAlpha by animateFloatAsState(
+        targetValue = when {
+            !enabled -> AeonMotionAlpha.Disabled
+            selected -> 1f
+            else -> 0.82f
+        },
+        animationSpec = tween(
+            durationMillis = AeonDuration.Normal,
+            easing = AeonEasing.Standard
+        ),
+        label = "aeon_bottom_nav_label_alpha"
+    )
 
-// ----------------------------------------------------
-// Badge
-// ----------------------------------------------------
+    val labelOffsetY by animateDpAsState(
+        targetValue = if (selected) 0.dp else 1.dp,
+        animationSpec = tween(
+            durationMillis = AeonDuration.Normal,
+            easing = AeonEasing.Decelerate
+        ),
+        label = "aeon_bottom_nav_label_offset"
+    )
+
+    Text(
+        text = text,
+        style = if (selected) {
+            AeonTextStyles.BottomNavSelected
+        } else {
+            AeonTextStyles.BottomNavUnselected
+        },
+        color = color,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .alpha(labelAlpha)
+            .offset(y = labelOffsetY)
+    )
+}
 
 @Composable
 private fun AeonBottomNavigationBadge(
     badgeCount: Int,
     hasNewContent: Boolean,
     accentColor: Color,
+    token: AeonBottomNavigationToken,
     modifier: Modifier = Modifier
 ) {
     val colors = AeonThemeTokens.colors
     val showBadge = badgeCount > 0 || hasNewContent
 
+    val badgeDiameter = if (badgeCount > 0) {
+        token.badgeSize + 11.dp
+    } else {
+        token.badgeSize
+    }
+
     AnimatedVisibility(
         visible = showBadge,
         enter = fadeIn(
-            animationSpec = tween(AeonDuration.Fast)
+            animationSpec = tween(
+                durationMillis = AeonDuration.Fast,
+                easing = AeonEasing.Decelerate
+            )
+        ) + scaleIn(
+            initialScale = 0.72f,
+            animationSpec = AeonSpring.snappy()
         ),
         exit = fadeOut(
-            animationSpec = tween(AeonDuration.Fast)
+            animationSpec = tween(
+                durationMillis = AeonDuration.Fast,
+                easing = AeonEasing.Accelerate
+            )
+        ) + scaleOut(
+            targetScale = 0.72f,
+            animationSpec = AeonSpring.snappy()
         ),
         modifier = modifier
     ) {
         Surface(
             modifier = Modifier
-                .size(
-                    if (badgeCount > 0) 18.dp else 8.dp
-                )
-                .widthIn(min = if (badgeCount > 0) 18.dp else 8.dp),
+                .size(badgeDiameter)
+                .widthIn(min = badgeDiameter),
             shape = AeonComponentShapes.Badge,
             color = if (badgeCount > 0) colors.error else accentColor,
             contentColor = Color.White,
             border = BorderStroke(
                 width = 1.dp,
-                color = colors.surface.copy(alpha = 0.92f)
+                color = colors.surface.copy(
+                    alpha = if (colors.isDark) 0.86f else 0.96f
+                )
             )
         ) {
             if (badgeCount > 0) {
-                Box(
-                    contentAlignment = Alignment.Center
-                ) {
+                Box(contentAlignment = Alignment.Center) {
                     Text(
                         text = if (badgeCount > 99) "99+" else badgeCount.toString(),
                         style = AeonTextStyles.Micro,
@@ -398,60 +513,42 @@ private fun AeonBottomNavigationBadge(
     }
 }
 
-
-// ----------------------------------------------------
-// Background Glow
-// Optional wrapper for premium screens.
-// ----------------------------------------------------
-
 @Composable
 fun AeonBottomNavigationGlow(
     modifier: Modifier = Modifier,
+    visible: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colors = AeonThemeTokens.colors
 
     Box(
-        modifier = modifier
+        modifier = modifier,
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .alpha(if (colors.isDark) 0.40f else 0.18f)
-        ) {
-            Surface(
-                modifier = Modifier.matchParentSize(),
-                color = Color.Transparent
-            ) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .padding(horizontal = AeonSpacing.Large)
-                ) {
-                    Surface(
-                        modifier = Modifier.matchParentSize(),
-                        color = Color.Transparent
-                    ) {
-                        Box(
-                            modifier = Modifier.matchParentSize()
-                        ) {
-                            androidx.compose.foundation.layout.Box(
-                                modifier = Modifier.matchParentSize()
+        if (visible) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(horizontal = AeonSpacing.Large)
+                    .alpha(if (colors.isDark) 0.24f else 0.14f)
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                colors.brand.copy(
+                                    alpha = if (colors.isDark) 0.22f else 0.16f
+                                ),
+                                Color.Transparent
                             )
-                        }
-                    }
-                }
-            }
+                        ),
+                        shape = AeonComponentShapes.CardHero
+                    )
+            )
         }
 
         content()
     }
 }
-
-
-// ----------------------------------------------------
-// Token Resolver
-// ----------------------------------------------------
 
 private fun aeonBottomNavigationToken(
     style: AeonBottomNavigationStyle
@@ -464,13 +561,14 @@ private fun aeonBottomNavigationToken(
             ),
             itemPadding = PaddingValues(
                 horizontal = AeonSpacing.XSmall,
-                vertical = 4.dp
+                vertical = 3.dp
             ),
-            minHeight = 56.dp,
-            itemMinHeight = 46.dp,
-            symbolSize = 24.dp,
+            minHeight = 54.dp,
+            itemMinHeight = 42.dp,
+            symbolSize = 21.dp,
             badgeSize = 7.dp,
-            selectedIndicatorSize = 20.dp
+            selectedIndicatorSize = 28.dp,
+            maxContainerWidth = 620.dp
         )
 
         AeonBottomNavigationStyle.Attached -> AeonBottomNavigationToken(
@@ -480,13 +578,14 @@ private fun aeonBottomNavigationToken(
             ),
             itemPadding = PaddingValues(
                 horizontal = AeonSpacing.XSmall,
-                vertical = 4.dp
+                vertical = 3.dp
             ),
-            minHeight = 60.dp,
-            itemMinHeight = 48.dp,
-            symbolSize = 24.dp,
+            minHeight = 56.dp,
+            itemMinHeight = 44.dp,
+            symbolSize = 21.dp,
             badgeSize = 7.dp,
-            selectedIndicatorSize = 20.dp
+            selectedIndicatorSize = 28.dp,
+            maxContainerWidth = Dp.Unspecified
         )
 
         AeonBottomNavigationStyle.Minimal -> AeonBottomNavigationToken(
@@ -496,21 +595,42 @@ private fun aeonBottomNavigationToken(
             ),
             itemPadding = PaddingValues(
                 horizontal = AeonSpacing.XSmall,
-                vertical = 3.dp
+                vertical = 2.dp
             ),
             minHeight = 48.dp,
-            itemMinHeight = 40.dp,
-            symbolSize = 22.dp,
+            itemMinHeight = 38.dp,
+            symbolSize = 19.dp,
             badgeSize = 6.dp,
-            selectedIndicatorSize = 16.dp
+            selectedIndicatorSize = 26.dp,
+            maxContainerWidth = 560.dp
         )
     }
 }
 
+@Composable
+private fun aeonBottomNavigationBorder(
+    style: AeonBottomNavigationStyle
+): BorderStroke? {
+    val colors = AeonThemeTokens.colors
 
-// ----------------------------------------------------
-// Accent Resolver
-// ----------------------------------------------------
+    return when (style) {
+        AeonBottomNavigationStyle.Floating -> BorderStroke(
+            width = 1.dp,
+            color = colors.textPrimary.copy(
+                alpha = if (colors.isDark) 0.08f else 0.05f
+            )
+        )
+
+        AeonBottomNavigationStyle.Attached -> null
+
+        AeonBottomNavigationStyle.Minimal -> BorderStroke(
+            width = 1.dp,
+            color = colors.textPrimary.copy(
+                alpha = if (colors.isDark) 0.06f else 0.04f
+            )
+        )
+    }
+}
 
 @Composable
 private fun aeonBottomNavigationAccentColor(
@@ -525,4 +645,17 @@ private fun aeonBottomNavigationAccentColor(
         AeonTopLevelAccent.Insights -> colors.premiumGold
         AeonTopLevelAccent.Finance -> colors.finance
     }
+}
+
+@Composable
+private fun aeonBottomNavigationSelectionColor(): Color {
+    return AeonThemeTokens.colors.warning
+}
+
+private fun String?.normalizedBottomNavigationRoute(): String {
+    return this
+        ?.substringBefore("?")
+        ?.trim()
+        ?.trim('/')
+        .orEmpty()
 }

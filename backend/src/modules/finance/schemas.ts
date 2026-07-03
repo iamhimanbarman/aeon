@@ -80,6 +80,11 @@ export const financeTransactionQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(300).default(100)
 });
 
+export const financeTransactionMonthsQuerySchema = z.object({
+  transactionType: financeTransactionTypeSchema.default("expense"),
+  category: z.string().trim().min(1).optional()
+});
+
 export const financeBudgetQuerySchema = z.object({
   month: monthSchema.optional(),
   updatedAfter: timestampSchema.optional()

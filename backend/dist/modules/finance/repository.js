@@ -175,6 +175,30 @@ export async function listFinanceTransactions(db, userId, query) {
     `, values);
     return camelizeRows(rows);
 }
+export async function listFinanceTransactionMonths(db, userId, query) {
+    await ensureFinanceDefaults(db, userId);
+    const values = [userId, query.transactionType];
+    const conditions = [
+        "user_id = $1::uuid",
+        "deleted_at is null",
+        "transaction_type = $2"
+    ];
+    if (query.category) {
+        values.push(query.category);
+        conditions.push(`category = $${values.length}`);
+    }
+    const rows = await db.unsafe(`
+      select distinct to_char(date_trunc('month', occurred_at at time zone 'utc'), 'YYYY-MM') as month_key
+      from finance_transactions
+      where ${conditions.join(" and ")}
+      order by month_key asc
+    `, values);
+    return {
+        months: rows
+            .map((row) => row.month_key)
+            .filter((monthKey) => typeof monthKey === "string" && monthKey.length === 7)
+    };
+}
 export async function getFinanceTransaction(db, userId, transactionId) {
     const rows = await db `
     select *

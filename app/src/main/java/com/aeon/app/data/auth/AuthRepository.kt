@@ -28,7 +28,6 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 sealed interface AuthSessionState {
-    data object Loading : AuthSessionState
     data object SignedOut : AuthSessionState
     data object Guest : AuthSessionState
     data class Authenticated(val session: AuthSession) : AuthSessionState
@@ -87,7 +86,7 @@ class AuthRepository(
         "aeon://auth/callback"
     }
 
-    private val _sessionState = MutableStateFlow<AuthSessionState>(AuthSessionState.Loading)
+    private val _sessionState = MutableStateFlow(initialSessionState())
     val sessionState: StateFlow<AuthSessionState> = _sessionState.asStateFlow()
 
     private val _providerStatus = MutableStateFlow(AuthProviderStatus())
@@ -116,8 +115,6 @@ class AuthRepository(
                 }
 
                 !exchangeCode.isNullOrBlank() -> {
-                    _sessionState.value = AuthSessionState.Loading
-
                     runCatching {
                         api.exchangeGoogleCode(exchangeCode)
                     }.onSuccess { session ->
@@ -220,6 +217,10 @@ class AuthRepository(
         } else {
             _sessionState.value = AuthSessionState.Authenticated(storedSession)
         }
+    }
+
+    private fun initialSessionState(): AuthSessionState {
+        return store.read()?.let(AuthSessionState::Authenticated) ?: localFallbackState()
     }
 
     private fun ensureConfigured() {

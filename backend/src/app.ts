@@ -15,8 +15,21 @@ import { registerTaskRoutes } from "./modules/tasks/routes.js";
 
 export function buildApp() {
   const app = Fastify({
+    bodyLimit: 1_048_576,
     logger: {
-      level: env.LOG_LEVEL
+      level: env.LOG_LEVEL,
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "req.headers.cookie",
+          "body.password",
+          "body.code",
+          "body.refreshToken",
+          "body.idToken",
+          "body.resetToken"
+        ],
+        remove: true
+      }
     }
   });
 
@@ -74,6 +87,7 @@ export function buildApp() {
 
   app.register(registerHealthRoutes);
   app.register(registerAuthRoutes, { prefix: "/v1/auth" });
+  app.register(registerAuthRoutes, { prefix: "/auth" });
   app.register(registerFinanceRoutes, { prefix: "/v1/finance" });
   app.register(registerFocusRoutes, { prefix: "/v1/focus" });
   app.register(registerTaskRoutes, { prefix: "/v1/tasks" });

@@ -1,20 +1,24 @@
-import { createHmac, createSecretKey, randomBytes } from "node:crypto";
+import { createSecretKey } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
 import { env } from "../../config/env.js";
 import { unauthorized } from "../../lib/errors.js";
+import { createOpaqueToken, hmacSha256 } from "../../security/crypto.js";
 const authSecretKey = createSecretKey(Buffer.from(env.AUTH_JWT_SECRET, "utf8"));
 export async function signAccessToken(claims) {
-    const expiresInSeconds = env.AUTH_ACCESS_TOKEN_TTL_MINUTES * 60;
-    const jwt = await new SignJWT({
-        email: claims.email,
-        name: claims.name,
-        provider: claims.provider,
-        type: "access"
-    })
+    const expiresInSeconds = env.ACCESS_TOKEN_TTL_SECONDS;
+    const payload = {
+        type: "access",
+        sid: claims.sid
+    };
+    if (claims.role) {
+        payload.role = claims.role;
+    }
+    const jwt = await new SignJWT(payload)
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
         .setIssuer(env.AUTH_JWT_ISSUER)
         .setAudience(env.AUTH_JWT_AUDIENCE)
         .setSubject(claims.sub)
+        .setJti(claims.sid)
         .setIssuedAt()
         .setExpirationTime(`${expiresInSeconds}s`)
         .sign(authSecretKey);
@@ -59,10 +63,11 @@ export async function verifySignupToken(token) {
     };
 }
 export function createRefreshToken() {
-    return randomBytes(48).toString("base64url");
+    return createOpaqueToken(48);
 }
 export function hashOpaqueToken(token) {
-    return createHmac("sha256", env.AUTH_TOKEN_HASH_PEPPER)
-        .update(token)
-        .digest("hex");
+    return hmacSha256(token, env.REFRESH_TOKEN_PEPPER);
+}
+export function hashOtpCode(salt, code) {
+    return hmacSha256(`${salt}:${code}`, env.OTP_PEPPER);
 }

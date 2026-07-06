@@ -626,7 +626,7 @@ private fun Throwable.toAuthToastText(): String {
         rawMessage.equals("Your signup session expired. Start again.", ignoreCase = true) -> "Session expired. Start again"
         rawMessage.contains("Auth backend is not configured", ignoreCase = true) -> "Service unavailable"
         rawMessage.contains("Google sign-in is unavailable", ignoreCase = true) -> "Google sign-in unavailable"
-        rawMessage.isBlank() -> "Request failed"
+        rawMessage.isBlank() -> "Unable to connect"
         else -> rawMessage
     }
 }

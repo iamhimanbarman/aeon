@@ -15,7 +15,9 @@ Production-oriented backend scaffold for the Aeon mobile app. This backend is bu
 - `src/app.ts`: service composition, plugins, and route registration
 - `src/plugins/db.ts`: pooled PostgreSQL connection
 - `src/plugins/auth.ts`: bearer-token verification for Aeon's first-party JWTs, with optional Supabase JWT compatibility
-- `src/modules/auth`: email OTP, password signup, refresh-session, and provider status APIs
+- `src/modules/auth`: Google, OTP, password, session, reauth, and security-event auth APIs
+- `src/security`: crypto helpers, audit logging, rate-limit presets, and generic auth errors
+- `src/email`: email provider abstraction for OTP and password-reset delivery
 - `src/modules/tasks`: task, project, subtask, reminder, and completion-log APIs
 - `src/modules/focus`: focus session, routine, occurrence, and routine-log APIs
 - `src/modules/finance`: account, category, transaction, budget, and overview APIs
@@ -37,6 +39,8 @@ Current schema coverage:
 - `focus_sessions`, `focus_routine_templates`, `focus_routine_items`, `focus_routine_occurrences`, `focus_routine_logs`
 - `finance_accounts`, `finance_categories`, `finance_transactions`, `finance_budgets`
 - `app_users`
+- `auth_identities`, `password_credentials`, `auth_email_challenges`, `auth_sessions`, `auth_refresh_tokens`
+- `security_events`, `reauth_challenges`
 
 ## Render Setup
 
@@ -48,13 +52,19 @@ Current schema coverage:
 - `DATABASE_URL`
 - `AUTH_JWT_SECRET`
 - `AUTH_TOKEN_HASH_PEPPER`
+- `PASSWORD_PEPPER`
+- `OTP_PEPPER`
+- `REFRESH_TOKEN_PEPPER`
 - `AUTH_EMAIL_FROM`
+- `EMAIL_FROM`
 - `RESEND_API_KEY`
 - `NODE_ENV=production`
 - `CORS_ORIGIN=https://aeon-9cds.onrender.com`
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REDIRECT_URI=https://aeon-9cds.onrender.com/v1/auth/google/callback`
+- `GOOGLE_WEB_CLIENT_ID`
+- `GOOGLE_ANDROID_CLIENT_ID` if using native Google ID tokens from Android
 - `AUTH_ALLOWED_MOBILE_REDIRECT_URIS=aeon://auth/callback`
 
 Recommended:
@@ -62,7 +72,7 @@ Recommended:
 - use the Supabase direct database URL if your network path supports it
 - otherwise use the Supabase session pooler URL on port `5432`
 - keep `prepare: false` as configured because pooled PostgreSQL setups are more stable that way
-- keep `AUTH_JWT_SECRET` and `AUTH_TOKEN_HASH_PEPPER` different from each other
+- keep `AUTH_JWT_SECRET`, `AUTH_TOKEN_HASH_PEPPER`, `PASSWORD_PEPPER`, `OTP_PEPPER`, and `REFRESH_TOKEN_PEPPER` different from each other
 
 Optional compatibility / provider variables:
 
@@ -72,9 +82,14 @@ Optional compatibility / provider variables:
 ## Auth Notes
 
 - Clients should never connect to the database directly for these domains.
-- The mobile app can authenticate against this backend using email OTP plus password and then call domain APIs with the returned bearer access token.
-- Refresh tokens are opaque, hashed before storage, and rotated on refresh.
-- Signup OTP emails are sent through Resend.
+- The mobile app can authenticate using Google, OTP, email/password, or the existing OTP-plus-password signup flow.
+- Access tokens are short-lived JWTs with minimal first-party claims: `sub`, `sid`, `iat`, `exp`, `iss`, and `aud`.
+- Refresh tokens are opaque, hashed with `REFRESH_TOKEN_PEPPER`, stored in token-history records, and rotated on every refresh.
+- Reuse of an already-rotated refresh token revokes the whole token family.
+- Passwords are hashed with Argon2id and a server-side `PASSWORD_PEPPER`. Legacy scrypt hashes are still accepted and rehashed after successful login.
+- OTP codes are HMAC-hashed with `OTP_PEPPER`, max-attempt limited, expiry-bound, and consumed after verification.
+- Auth security events are written to `security_events` for login, OTP, Google, session, refresh-reuse, and reauth activity.
+- OTP and password-reset emails are sent through the email abstraction in `src/email/email.service.ts`.
 - The backend still accepts Supabase JWTs when `SUPABASE_URL` is configured, so existing external auth can coexist during migration.
 
 ## Google OAuth For Android
@@ -92,6 +107,8 @@ Production notes:
 - set `CORS_ORIGIN` explicitly in production; wildcard `*` is blocked now
 - if your Google OAuth app is still in testing mode, only listed test users can sign in
 - publish the OAuth consent screen before treating Google sign-in as public production auth
+- `/v1/auth/google/start` keeps the existing browser OAuth flow for Android deep links
+- `/v1/auth/google` supports native Google ID-token sign-in when the Android app sends an ID token to the backend
 
 ## Local Development
 
@@ -222,7 +239,16 @@ Option B: cron-job.org
 
 ### Auth
 
+- All `/v1/auth/*` routes are also available under `/auth/*` for clients that do not want the version prefix.
 - `GET /v1/auth/providers`
+- `POST /v1/auth/google`
+- `POST /v1/auth/otp/start`
+- `POST /v1/auth/otp/verify`
+- `POST /v1/auth/password/signup`
+- `POST /v1/auth/password/login`
+- `POST /v1/auth/password/forgot/start`
+- `POST /v1/auth/password/forgot/verify`
+- `POST /v1/auth/password/reset`
 - `POST /v1/auth/signup/request-otp`
 - `POST /v1/auth/signup/verify-otp`
 - `POST /v1/auth/signup/complete`
@@ -230,9 +256,16 @@ Option B: cron-job.org
 - `GET /v1/auth/google/start`
 - `GET /v1/auth/google/callback`
 - `POST /v1/auth/google/exchange`
+- `POST /v1/auth/token/refresh`
 - `POST /v1/auth/session/refresh`
+- `POST /v1/auth/logout`
 - `POST /v1/auth/signout`
+- `POST /v1/auth/logout-all`
+- `POST /v1/auth/reauth/start`
+- `POST /v1/auth/reauth/verify`
 - `GET /v1/auth/me`
+- `GET /v1/auth/sessions`
+- `DELETE /v1/auth/sessions/:id`
 
 ## Implementation Notes
 

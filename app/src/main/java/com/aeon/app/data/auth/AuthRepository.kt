@@ -17,11 +17,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.security.KeyStore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -82,7 +87,7 @@ data class VerifyOtpResult(
     }
 }
 
-class AuthException(message: String) : Exception(message)
+class AuthException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 class AuthRepository(
     context: Context
@@ -152,19 +157,25 @@ class AuthRepository(
     }
 
     suspend fun refreshProviderStatus() {
-        _providerStatus.value = runCatching {
-            api.getProviders()
-        }.getOrDefault(AuthProviderStatus())
+        _providerStatus.value = withContext(Dispatchers.IO) {
+            runCatching {
+                api.getProviders()
+            }.getOrDefault(AuthProviderStatus())
+        }
     }
 
     suspend fun requestSignupOtp(email: String): OtpRequestResult {
-        ensureConfigured()
-        return api.requestSignupOtp(email.trim())
+        return withContext(Dispatchers.IO) {
+            ensureConfigured()
+            api.requestSignupOtp(email.trim())
+        }
     }
 
     suspend fun verifySignupOtp(email: String, code: String): VerifyOtpResult {
-        ensureConfigured()
-        return api.verifySignupOtp(email.trim(), code.trim())
+        return withContext(Dispatchers.IO) {
+            ensureConfigured()
+            api.verifySignupOtp(email.trim(), code.trim())
+        }
     }
 
     suspend fun completeSignup(
@@ -172,14 +183,18 @@ class AuthRepository(
         password: String,
         displayName: String?
     ) {
-        ensureConfigured()
-        val session = api.completeSignup(signupToken, password, displayName?.trim().orEmpty())
+        val session = withContext(Dispatchers.IO) {
+            ensureConfigured()
+            api.completeSignup(signupToken, password, displayName?.trim().orEmpty())
+        }
         persistSession(session)
     }
 
     suspend fun signIn(email: String, password: String) {
-        ensureConfigured()
-        val session = api.signIn(email.trim(), password)
+        val session = withContext(Dispatchers.IO) {
+            ensureConfigured()
+            api.signIn(email.trim(), password)
+        }
         persistSession(session)
     }
 
@@ -187,8 +202,10 @@ class AuthRepository(
         val currentSession = (sessionState.value as? AuthSessionState.Authenticated)?.session
 
         if (currentSession != null) {
-            runCatching {
-                api.signOut(currentSession.refreshToken)
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    api.signOut(currentSession.refreshToken)
+                }
             }
         }
 
@@ -198,8 +215,10 @@ class AuthRepository(
     }
 
     suspend fun getGoogleAuthUrl(): String {
-        ensureConfigured()
-        return api.getGoogleStartUrl(mobileRedirectUri)
+        return withContext(Dispatchers.IO) {
+            ensureConfigured()
+            api.getGoogleStartUrl(mobileRedirectUri)
+        }
     }
 
     private suspend fun restoreSession() {
@@ -419,26 +438,52 @@ private class AuthApiClient(
     }
 
     private fun executeJson(request: Request): JSONObject {
-        client.newCall(request).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
+        return try {
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
 
-            if (!response.isSuccessful) {
-                throw AuthException(parseErrorMessage(responseBody, response.code))
+                if (!response.isSuccessful) {
+                    throw AuthException(parseErrorMessage(responseBody, response.code))
+                }
+
+                if (responseBody.isBlank()) {
+                    return JSONObject()
+                }
+
+                return JSONObject(responseBody)
             }
-
-            if (responseBody.isBlank()) {
-                return JSONObject()
-            }
-
-            return JSONObject(responseBody)
+        } catch (exception: AuthException) {
+            throw exception
+        } catch (exception: UnknownHostException) {
+            throw AuthException("Network unavailable", exception)
+        } catch (exception: SocketTimeoutException) {
+            throw AuthException("Request timed out", exception)
+        } catch (exception: IOException) {
+            throw AuthException("Connection failed", exception)
+        } catch (exception: JSONException) {
+            throw AuthException("Invalid server response", exception)
+        } catch (exception: IllegalArgumentException) {
+            throw AuthException("Service unavailable", exception)
         }
     }
 
     private fun executeNoContent(request: Request) {
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw AuthException(parseErrorMessage(response.body?.string().orEmpty(), response.code))
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw AuthException(parseErrorMessage(response.body?.string().orEmpty(), response.code))
+                }
             }
+        } catch (exception: AuthException) {
+            throw exception
+        } catch (exception: UnknownHostException) {
+            throw AuthException("Network unavailable", exception)
+        } catch (exception: SocketTimeoutException) {
+            throw AuthException("Request timed out", exception)
+        } catch (exception: IOException) {
+            throw AuthException("Connection failed", exception)
+        } catch (exception: IllegalArgumentException) {
+            throw AuthException("Service unavailable", exception)
         }
     }
 

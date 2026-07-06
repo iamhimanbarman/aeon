@@ -511,6 +511,7 @@ export async function upsertFinanceCounterparty(
   const now = new Date().toISOString();
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
+  const counterpartyId = input.id?.trim() || buildPrefixedId("counterparty");
 
   const rows = await db<Record<string, unknown>[]>`
     with updated as (
@@ -520,7 +521,10 @@ export async function upsertFinanceCounterparty(
           updated_at = ${now}::timestamptz,
           deleted_at = null
       where user_id = ${userId}::uuid
-        and lower(email) = lower(${email})
+        and (
+          id = ${counterpartyId}
+          or lower(email) = lower(${email})
+        )
       returning *
     ),
     inserted as (
@@ -529,7 +533,7 @@ export async function upsertFinanceCounterparty(
       )
       select
         ${userId}::uuid,
-        ${buildPrefixedId("counterparty")},
+        ${counterpartyId},
         ${name},
         ${email},
         ${now}::timestamptz,
@@ -552,11 +556,12 @@ export async function createFinanceCounterpartyRecord(
   input: FinanceCounterpartyRecordInput
 ) {
   const counterparty = await upsertFinanceCounterparty(db, userId, {
+    id: input.counterpartyId,
     name: input.counterpartyName,
     email: input.counterpartyEmail
   });
   const now = new Date().toISOString();
-  const recordId = buildPrefixedId("ledger");
+  const recordId = input.id?.trim() || buildPrefixedId("ledger");
 
   const rows = await db<Record<string, unknown>[]>`
     insert into finance_counterparty_records (
@@ -578,6 +583,16 @@ export async function createFinanceCounterpartyRecord(
       ${now}::timestamptz,
       ${now}::timestamptz
     )
+    on conflict (user_id, id) do update
+      set counterparty_id = excluded.counterparty_id,
+          direction = excluded.direction,
+          purpose = excluded.purpose,
+          note = excluded.note,
+          amount = excluded.amount,
+          currency = excluded.currency,
+          occurred_at = excluded.occurred_at,
+          updated_at = excluded.updated_at,
+          deleted_at = null
     returning *
   `;
 

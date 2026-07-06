@@ -386,6 +386,7 @@ export async function upsertFinanceCounterparty(db, userId, input) {
     const now = new Date().toISOString();
     const email = input.email.trim().toLowerCase();
     const name = input.name.trim();
+    const counterpartyId = input.id?.trim() || buildPrefixedId("counterparty");
     const rows = await db `
     with updated as (
       update finance_counterparties
@@ -394,7 +395,10 @@ export async function upsertFinanceCounterparty(db, userId, input) {
           updated_at = ${now}::timestamptz,
           deleted_at = null
       where user_id = ${userId}::uuid
-        and lower(email) = lower(${email})
+        and (
+          id = ${counterpartyId}
+          or lower(email) = lower(${email})
+        )
       returning *
     ),
     inserted as (
@@ -403,7 +407,7 @@ export async function upsertFinanceCounterparty(db, userId, input) {
       )
       select
         ${userId}::uuid,
-        ${buildPrefixedId("counterparty")},
+        ${counterpartyId},
         ${name},
         ${email},
         ${now}::timestamptz,
@@ -420,11 +424,12 @@ export async function upsertFinanceCounterparty(db, userId, input) {
 }
 export async function createFinanceCounterpartyRecord(db, userId, input) {
     const counterparty = await upsertFinanceCounterparty(db, userId, {
+        id: input.counterpartyId,
         name: input.counterpartyName,
         email: input.counterpartyEmail
     });
     const now = new Date().toISOString();
-    const recordId = buildPrefixedId("ledger");
+    const recordId = input.id?.trim() || buildPrefixedId("ledger");
     const rows = await db `
     insert into finance_counterparty_records (
       user_id, id, counterparty_id, direction, purpose, note, amount, currency, status,
@@ -445,6 +450,16 @@ export async function createFinanceCounterpartyRecord(db, userId, input) {
       ${now}::timestamptz,
       ${now}::timestamptz
     )
+    on conflict (user_id, id) do update
+      set counterparty_id = excluded.counterparty_id,
+          direction = excluded.direction,
+          purpose = excluded.purpose,
+          note = excluded.note,
+          amount = excluded.amount,
+          currency = excluded.currency,
+          occurred_at = excluded.occurred_at,
+          updated_at = excluded.updated_at,
+          deleted_at = null
     returning *
   `;
     return {

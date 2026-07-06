@@ -67,36 +67,48 @@ export async function registerFinanceRoutes(app) {
             ?? request.authUser?.email
             ?? "An Aeon user";
         const result = await createFinanceCounterpartyRecord(app.db, request.authUser.userId, body);
-        let emailed = false;
-        let emailSharedAt = null;
-        try {
-            await sendFinanceCounterpartyEmail({
-                recipientEmail: body.counterpartyEmail,
-                recipientName: body.counterpartyName,
-                ownerName,
-                ownerEmail: request.authUser?.email,
-                direction: body.direction,
-                purpose: body.purpose,
-                amount: body.amount,
-                currency: body.currency,
-                occurredAt: body.occurredAt,
-                note: body.note
-            });
-            emailed = true;
-            emailSharedAt = new Date().toISOString();
-            await markFinanceCounterpartyRecordShared(app.db, request.authUser.userId, result.recordId, emailSharedAt);
-        }
-        catch (error) {
-            app.log.warn({
-                err: error,
-                userId: request.authUser.userId,
-                recordId: result.recordId
-            }, "finance_counterparty_email_failed");
+        const existingEmailSharedAt = toIsoStringOrNull(result.record.emailSharedAt);
+        let emailStatus = existingEmailSharedAt ? "already_sent" : "failed";
+        let emailed = Boolean(existingEmailSharedAt);
+        let emailSharedAt = existingEmailSharedAt;
+        let emailErrorCode = null;
+        if (!emailSharedAt) {
+            try {
+                await sendFinanceCounterpartyEmail({
+                    recipientEmail: body.counterpartyEmail,
+                    recipientName: body.counterpartyName,
+                    ownerName,
+                    ownerEmail: request.authUser?.email,
+                    direction: body.direction,
+                    purpose: body.purpose,
+                    amount: body.amount,
+                    currency: body.currency,
+                    occurredAt: body.occurredAt,
+                    note: body.note
+                });
+                emailed = true;
+                emailStatus = "sent";
+                emailSharedAt = new Date().toISOString();
+                await markFinanceCounterpartyRecordShared(app.db, request.authUser.userId, result.recordId, emailSharedAt);
+            }
+            catch (error) {
+                emailStatus = "failed";
+                emailErrorCode = error instanceof Error && "code" in error
+                    ? String(error.code ?? "email_delivery_failed")
+                    : "email_delivery_failed";
+                app.log.warn({
+                    err: error,
+                    userId: request.authUser.userId,
+                    recordId: result.recordId
+                }, "finance_counterparty_email_failed");
+            }
         }
         return {
             ok: true,
             emailed,
+            emailStatus,
             emailSharedAt,
+            emailErrorCode,
             counterparty: result.counterparty,
             record: {
                 ...result.record,
@@ -127,4 +139,14 @@ export async function registerFinanceRoutes(app) {
             recipientEmail: body.counterpartyEmail
         };
     });
+}
+function toIsoStringOrNull(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString();
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+    }
+    return null;
 }

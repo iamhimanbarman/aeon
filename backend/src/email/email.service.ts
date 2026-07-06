@@ -42,10 +42,12 @@ export async function sendOtpEmail(input: OtpEmailInput): Promise<void> {
   });
 
   if (!response.ok) {
+    const providerError = await parseEmailProviderError(response);
     throw new AppError(
       502,
       "email_delivery_failed",
-      "Aeon could not send the verification email right now."
+      "Aeon could not send the verification email right now.",
+      providerError
     );
   }
 }
@@ -80,11 +82,38 @@ export async function sendFinanceCounterpartyEmail(
   });
 
   if (!response.ok) {
+    const providerError = await parseEmailProviderError(response);
     throw new AppError(
       502,
       "email_delivery_failed",
-      "Aeon could not send the account email right now."
+      "Aeon could not send the account email right now.",
+      providerError
     );
+  }
+}
+
+async function parseEmailProviderError(response: Response): Promise<Record<string, unknown>> {
+  const body = await response.text().catch(() => "");
+
+  return {
+    provider: "resend",
+    status: response.status,
+    message: parseProviderMessage(body)
+  };
+}
+
+function parseProviderMessage(body: string): string {
+  if (!body.trim()) {
+    return "No provider error body returned.";
+  }
+
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; name?: unknown };
+    const message = typeof parsed.message === "string" ? parsed.message : undefined;
+    const name = typeof parsed.name === "string" ? parsed.name : undefined;
+    return [name, message].filter(Boolean).join(": ") || "Provider returned an error.";
+  } catch {
+    return body.slice(0, 500);
   }
 }
 

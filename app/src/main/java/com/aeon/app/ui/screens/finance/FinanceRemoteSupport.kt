@@ -28,11 +28,14 @@ internal data class FinanceRemoteTransactionQuery(
 )
 
 internal data class FinanceRemoteCounterpartyInput(
+    val id: String? = null,
     val name: String,
     val email: String
 )
 
 internal data class FinanceRemoteCounterpartyShareInput(
+    val id: String? = null,
+    val counterpartyId: String? = null,
     val counterpartyName: String,
     val counterpartyEmail: String,
     val direction: String,
@@ -148,6 +151,10 @@ internal class FinanceRemoteClient(
             .put("name", input.name)
             .put("email", input.email)
 
+        input.id?.takeIf(String::isNotBlank)?.let { id ->
+            payload.put("id", id)
+        }
+
         executeJsonObject(
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparties", emptyMap()))
@@ -174,6 +181,12 @@ internal class FinanceRemoteClient(
             .put("currency", input.currency)
             .put("occurredAt", input.occurredAt)
 
+        input.id?.takeIf(String::isNotBlank)?.let { id ->
+            payload.put("id", id)
+        }
+        input.counterpartyId?.takeIf(String::isNotBlank)?.let { counterpartyId ->
+            payload.put("counterpartyId", counterpartyId)
+        }
         input.note?.takeIf(String::isNotBlank)?.let { note ->
             payload.put("note", note)
         }

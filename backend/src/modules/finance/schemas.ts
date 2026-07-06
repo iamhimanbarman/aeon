@@ -92,6 +92,7 @@ export const financeBudgetQuerySchema = z.object({
 });
 
 export const financeCounterpartyInputSchema = z.object({
+  id: z.string().trim().min(1).max(120).optional(),
   name: trimmedStringSchema.max(120),
   email: z
     .string()
@@ -115,4 +116,7 @@ export const financeCounterpartyShareInputSchema = z.object({
   occurredAt: timestampSchema.default(new Date().toISOString())
 });
 
-export const financeCounterpartyRecordInputSchema = financeCounterpartyShareInputSchema;
+export const financeCounterpartyRecordInputSchema = financeCounterpartyShareInputSchema.extend({
+  id: z.string().trim().min(1).max(120).optional(),
+  counterpartyId: z.string().trim().min(1).max(120).optional()
+});

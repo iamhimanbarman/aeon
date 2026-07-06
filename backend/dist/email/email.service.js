@@ -19,7 +19,8 @@ export async function sendOtpEmail(input) {
         })
     });
     if (!response.ok) {
-        throw new AppError(502, "email_delivery_failed", "Aeon could not send the verification email right now.");
+        const providerError = await parseEmailProviderError(response);
+        throw new AppError(502, "email_delivery_failed", "Aeon could not send the verification email right now.", providerError);
     }
 }
 export async function sendPasswordResetEmail(input) {
@@ -47,7 +48,30 @@ export async function sendFinanceCounterpartyEmail(input) {
         })
     });
     if (!response.ok) {
-        throw new AppError(502, "email_delivery_failed", "Aeon could not send the account email right now.");
+        const providerError = await parseEmailProviderError(response);
+        throw new AppError(502, "email_delivery_failed", "Aeon could not send the account email right now.", providerError);
+    }
+}
+async function parseEmailProviderError(response) {
+    const body = await response.text().catch(() => "");
+    return {
+        provider: "resend",
+        status: response.status,
+        message: parseProviderMessage(body)
+    };
+}
+function parseProviderMessage(body) {
+    if (!body.trim()) {
+        return "No provider error body returned.";
+    }
+    try {
+        const parsed = JSON.parse(body);
+        const message = typeof parsed.message === "string" ? parsed.message : undefined;
+        const name = typeof parsed.name === "string" ? parsed.name : undefined;
+        return [name, message].filter(Boolean).join(": ") || "Provider returned an error.";
+    }
+    catch {
+        return body.slice(0, 500);
     }
 }
 function resolveSubject(purpose) {

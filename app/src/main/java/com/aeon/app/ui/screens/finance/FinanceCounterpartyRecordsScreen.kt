@@ -101,6 +101,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Currency
 import java.util.Locale
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun AeonFinanceCounterpartyRecordsRoute(
@@ -191,6 +192,7 @@ fun AeonFinanceCounterpartyRecordsRoute(
                                     remoteClient.syncCounterparty(
                                         accessToken = accessToken,
                                         input = FinanceRemoteCounterpartyInput(
+                                            id = counterparty.id,
                                             name = counterparty.name,
                                             email = counterparty.email.orEmpty()
                                         )
@@ -364,6 +366,8 @@ fun AeonFinanceCounterpartyDetailRoute(
                                         remoteClient.syncCounterpartyRecord(
                                             accessToken = accessToken,
                                             input = FinanceRemoteCounterpartyShareInput(
+                                                id = record.id,
+                                                counterpartyId = currentCounterparty.id,
                                                 counterpartyName = currentCounterparty.name,
                                                 counterpartyEmail = email,
                                                 direction = directionValue,
@@ -375,8 +379,12 @@ fun AeonFinanceCounterpartyDetailRoute(
                                             )
                                         )
                                     }.onSuccess { response ->
-                                        if (response.optBoolean("emailed", false)) {
-                                            container.repositories.finance.markCounterpartyRecordShared(record.id)
+                                        val sharedAt = response.resolveFinanceEmailSharedAt()
+                                        if (response.optBoolean("emailed", false) || sharedAt != null) {
+                                            container.repositories.finance.markCounterpartyRecordShared(
+                                                recordId = record.id,
+                                                sharedAt = sharedAt ?: Instant.now()
+                                            )
                                         } else {
                                             toastHostState.showWarning(
                                                 title = "Email failed",
@@ -1643,4 +1651,16 @@ private fun Instant.toFinanceLedgerTimeLabel(): String {
 private fun Instant.toFinanceLedgerDateLabel(): String {
     return atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+}
+
+private fun JSONObject.resolveFinanceEmailSharedAt(): Instant? {
+    val value = optString("emailSharedAt")
+        .takeIf { timestamp -> timestamp.isNotBlank() }
+        ?: optJSONObject("record")
+            ?.optString("emailSharedAt")
+            ?.takeIf { timestamp -> timestamp.isNotBlank() }
+
+    return value?.let { timestamp ->
+        runCatching { Instant.parse(timestamp) }.getOrNull()
+    }
 }

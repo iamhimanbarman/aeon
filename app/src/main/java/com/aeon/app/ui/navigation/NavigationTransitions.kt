@@ -859,6 +859,7 @@ private object AeonNavigationMotionRegistry {
         FinanceBudgetSetupDestination.baseRoute,
         FinanceCategoriesDestination.baseRoute,
         FinanceCategoryEditorDestination.baseRoute,
+        FinanceCounterpartyRecordsDestination.baseRoute,
         AiChatDestination.baseRoute
     ).map { route ->
         AeonRouteMotionSpec(

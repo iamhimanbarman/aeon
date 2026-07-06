@@ -12,6 +12,7 @@ import {
 export const financeAccountTypeSchema = z.enum(["cash", "bank", "wallet", "upi"]);
 export const financeTransactionTypeSchema = z.enum(["expense", "income", "transfer"]);
 export const financeCategoryScopeSchema = z.enum(["expense", "income"]);
+export const financeCounterpartyDirectionSchema = z.enum(["owed_to_me", "i_owe"]);
 export const financeCategoryFamilySchema = z.enum([
   "core",
   "food",
@@ -88,4 +89,19 @@ export const financeTransactionMonthsQuerySchema = z.object({
 export const financeBudgetQuerySchema = z.object({
   month: monthSchema.optional(),
   updatedAfter: timestampSchema.optional()
+});
+
+export const financeCounterpartyShareInputSchema = z.object({
+  counterpartyName: trimmedStringSchema.max(120),
+  counterpartyEmail: z
+    .string()
+    .trim()
+    .email("Enter a valid email address.")
+    .max(320),
+  direction: financeCounterpartyDirectionSchema,
+  purpose: trimmedStringSchema.max(160),
+  amount: moneyInputSchema,
+  currency: currencySchema.default("INR"),
+  note: optionalTrimmedStringSchema,
+  occurredAt: timestampSchema.default(new Date().toISOString())
 });

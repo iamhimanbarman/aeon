@@ -1,7 +1,8 @@
+import { sendFinanceCounterpartyEmail } from "../../email/email.service.js";
 import { parseMonthKey } from "../../lib/dates.js";
 import { parseWithSchema } from "../../lib/validation.js";
 import { archiveFinanceAccount, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCategory, deleteFinanceTransaction, getFinanceOverview, getFinanceTransaction, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceTransactionMonths, listFinanceTransactions, setFinanceBudgetsForMonth } from "./repository.js";
-import { financeAccountInputSchema, financeBudgetQuerySchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
+import { financeAccountInputSchema, financeBudgetQuerySchema, financeCounterpartyShareInputSchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
 export async function registerFinanceRoutes(app) {
     app.get("/categories", { preHandler: app.authenticate }, async (request) => {
         return listFinanceCategories(app.db, request.authUser.userId);
@@ -55,5 +56,28 @@ export async function registerFinanceRoutes(app) {
     app.get("/overview/:month", { preHandler: app.authenticate }, async (request) => {
         const month = parseMonthKey(request.params.month).monthKey;
         return getFinanceOverview(app.db, request.authUser.userId, month);
+    });
+    app.post("/counterparty-share", { preHandler: app.authenticate }, async (request) => {
+        const body = parseWithSchema(financeCounterpartyShareInputSchema, request.body, "Invalid finance account-share payload.");
+        const ownerName = request.authUser?.displayName
+            ?? request.authUser?.email
+            ?? "An Aeon user";
+        await sendFinanceCounterpartyEmail({
+            recipientEmail: body.counterpartyEmail,
+            recipientName: body.counterpartyName,
+            ownerName,
+            ownerEmail: request.authUser?.email,
+            direction: body.direction,
+            purpose: body.purpose,
+            amount: body.amount,
+            currency: body.currency,
+            occurredAt: body.occurredAt,
+            note: body.note
+        });
+        return {
+            ok: true,
+            emailed: true,
+            recipientEmail: body.counterpartyEmail
+        };
     });
 }

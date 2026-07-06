@@ -158,6 +158,7 @@ data class FinanceTopBarConfig(
     val onOpenOverview: () -> Unit,
     val onOpenBudgetSetup: () -> Unit,
     val onOpenCategories: () -> Unit,
+    val onOpenCounterpartyRecords: () -> Unit,
     val onOpenImportData: () -> Unit,
     val onOpenEntryModes: () -> Unit
 )
@@ -238,6 +239,13 @@ fun FinanceTopBarActions(config: FinanceTopBarConfig) {
                         config.onOpenCategories()
                     }
                 )
+                DropdownMenuItem(
+                    text = { Text("Borrow & lend") },
+                    onClick = {
+                        actionsExpanded = false
+                        config.onOpenCounterpartyRecords()
+                    }
+                )
             }
         }
     }
@@ -250,6 +258,7 @@ fun AeonFinanceRoute(
     onOpenOverviewDetail: (String) -> Unit = {},
     onOpenBudgetSetup: (String) -> Unit = {},
     onOpenCategories: () -> Unit = {},
+    onOpenCounterpartyRecords: () -> Unit = {},
     modifier: Modifier = Modifier,
     onTopBarConfigChanged: (FinanceTopBarConfig) -> Unit = {}
 ) {
@@ -264,6 +273,7 @@ fun AeonFinanceRoute(
         onOpenOverviewDetail = onOpenOverviewDetail,
         onOpenBudgetSetup = onOpenBudgetSetup,
         onOpenCategories = onOpenCategories,
+        onOpenCounterpartyRecords = onOpenCounterpartyRecords,
         onAddTransaction = viewModel::addTransaction,
         onImportTransactions = viewModel::importTransactions,
         onTopBarConfigChanged = onTopBarConfigChanged
@@ -343,6 +353,7 @@ private fun FinanceScreen(
     onOpenOverviewDetail: (String) -> Unit,
     onOpenBudgetSetup: (String) -> Unit,
     onOpenCategories: () -> Unit,
+    onOpenCounterpartyRecords: () -> Unit,
     onAddTransaction: (FinanceTransactionInput) -> Unit,
     onImportTransactions: (List<FinanceTransactionInput>) -> Unit,
     onTopBarConfigChanged: (FinanceTopBarConfig) -> Unit,
@@ -374,7 +385,12 @@ private fun FinanceScreen(
         }
     }
 
-    val topBarConfig = remember(selectedMonth, onOpenOverviewDetail, onOpenCategories) {
+    val topBarConfig = remember(
+        selectedMonth,
+        onOpenOverviewDetail,
+        onOpenCategories,
+        onOpenCounterpartyRecords
+    ) {
         FinanceTopBarConfig(
             monthLabel = selectedMonth.toFinanceMonthLabel(),
             onPreviousMonth = {
@@ -394,6 +410,9 @@ private fun FinanceScreen(
             },
             onOpenCategories = {
                 onOpenCategories()
+            },
+            onOpenCounterpartyRecords = {
+                onOpenCounterpartyRecords()
             },
             onOpenImportData = {
                 showImportModeSheet = true

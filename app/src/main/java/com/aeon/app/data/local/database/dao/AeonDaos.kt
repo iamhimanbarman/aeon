@@ -10,6 +10,7 @@ import com.aeon.app.data.local.database.entities.AeonSettingsEntity
 import com.aeon.app.data.local.database.entities.BudgetEntity
 import com.aeon.app.data.local.database.entities.FinanceAccountEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryEntity
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordEntity
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
 import com.aeon.app.data.local.database.entities.FocusSessionEntity
 import com.aeon.app.data.local.database.entities.GoalEntity
@@ -1207,6 +1208,9 @@ interface FinanceDao {
     @Upsert
     suspend fun upsertBudgets(budgets: List<BudgetEntity>)
 
+    @Upsert
+    suspend fun upsertCounterpartyRecord(record: FinanceCounterpartyRecordEntity)
+
     @Query(
         """
         SELECT * FROM finance_accounts
@@ -1325,6 +1329,21 @@ interface FinanceDao {
         """
     )
     fun observeActiveBudgets(): Flow<List<BudgetEntity>>
+
+    @Query(
+        """
+        SELECT * FROM finance_counterparty_records
+        WHERE deleted_at IS NULL
+        ORDER BY
+            CASE status
+                WHEN 'open' THEN 0
+                ELSE 1
+            END,
+            occurred_at DESC,
+            created_at DESC
+        """
+    )
+    fun observeCounterpartyRecords(): Flow<List<FinanceCounterpartyRecordEntity>>
 
     @Query(
         """
@@ -1465,6 +1484,36 @@ interface FinanceDao {
     suspend fun softDeleteBudget(
         budgetId: String,
         deletedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
+        UPDATE finance_counterparty_records
+        SET status = :status,
+            settled_at = :settledAt,
+            updated_at = :updatedAt
+        WHERE id = :recordId
+        """
+    )
+    suspend fun updateCounterpartyRecordStatus(
+        recordId: String,
+        status: String,
+        settledAt: Instant?,
+        updatedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
+        UPDATE finance_counterparty_records
+        SET email_shared_at = :sharedAt,
+            updated_at = :updatedAt
+        WHERE id = :recordId
+        """
+    )
+    suspend fun updateCounterpartyRecordSharedAt(
+        recordId: String,
+        sharedAt: Instant,
+        updatedAt: Instant = Instant.now()
     )
 }
 

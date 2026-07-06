@@ -22,6 +22,8 @@ import com.aeon.app.data.local.database.entities.FinanceCategoryEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryFamilyStorage
 import com.aeon.app.data.local.database.entities.FinanceCategoryScopeStorage
 import com.aeon.app.data.local.database.entities.FinanceCategoryStorage
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordEntity
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordStatusStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
 import com.aeon.app.data.local.database.entities.FinanceTransactionTypeStorage
 import com.aeon.app.data.local.database.entities.FocusModeStorage
@@ -1329,6 +1331,10 @@ class FinanceRepository(
         return dao.observeActiveBudgets()
     }
 
+    fun observeCounterpartyRecords(): Flow<List<FinanceCounterpartyRecordEntity>> {
+        return dao.observeCounterpartyRecords()
+    }
+
     fun observeBudget(id: String): Flow<BudgetEntity?> {
         return dao.observeBudgetById(id)
     }
@@ -1571,6 +1577,45 @@ class FinanceRepository(
         return budget
     }
 
+    suspend fun createCounterpartyRecord(
+        counterpartyName: String,
+        direction: String,
+        purpose: String,
+        amount: BigDecimal,
+        currency: String = "INR",
+        counterpartyEmail: String? = null,
+        note: String? = null,
+        occurredAt: Instant = Instant.now()
+    ): FinanceCounterpartyRecordEntity {
+        AeonValidation.financeCounterpartyRecord(
+            counterpartyName = counterpartyName,
+            direction = direction,
+            purpose = purpose,
+            amount = amount,
+            currency = currency,
+            counterpartyEmail = counterpartyEmail,
+            note = note
+        ).throwIfInvalid()
+
+        val now = Instant.now()
+        val record = FinanceCounterpartyRecordEntity(
+            id = AeonId.new("ledger"),
+            counterpartyName = counterpartyName.cleanRequired("Counterparty name"),
+            counterpartyEmail = counterpartyEmail.cleanOptional(),
+            direction = direction,
+            purpose = purpose.cleanRequired("Purpose"),
+            note = note.cleanOptional(),
+            amount = amount.safeMoney(),
+            currency = currency.ifBlank { "INR" },
+            status = FinanceCounterpartyRecordStatusStorage.Open,
+            occurredAt = occurredAt,
+            createdAt = now,
+            updatedAt = now
+        )
+        dao.upsertCounterpartyRecord(record)
+        return record
+    }
+
     suspend fun replaceBudgetsForMonth(
         periodStart: LocalDate,
         periodEnd: LocalDate,
@@ -1663,6 +1708,34 @@ class FinanceRepository(
 
     suspend fun deleteBudget(budgetId: String) {
         dao.softDeleteBudget(budgetId)
+    }
+
+    suspend fun setCounterpartyRecordSettled(
+        recordId: String,
+        settled: Boolean
+    ) {
+        val now = Instant.now()
+        dao.updateCounterpartyRecordStatus(
+            recordId = recordId,
+            status = if (settled) {
+                FinanceCounterpartyRecordStatusStorage.Settled
+            } else {
+                FinanceCounterpartyRecordStatusStorage.Open
+            },
+            settledAt = if (settled) now else null,
+            updatedAt = now
+        )
+    }
+
+    suspend fun markCounterpartyRecordShared(
+        recordId: String,
+        sharedAt: Instant = Instant.now()
+    ) {
+        dao.updateCounterpartyRecordSharedAt(
+            recordId = recordId,
+            sharedAt = sharedAt,
+            updatedAt = sharedAt
+        )
     }
 }
 

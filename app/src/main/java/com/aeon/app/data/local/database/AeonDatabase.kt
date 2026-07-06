@@ -29,6 +29,7 @@ import com.aeon.app.data.local.database.entities.BudgetEntity
 import com.aeon.app.data.local.database.entities.FinanceAccountEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryCatalog
 import com.aeon.app.data.local.database.entities.FinanceCategoryEntity
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordEntity
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
 import com.aeon.app.data.local.database.entities.FocusSessionEntity
 import com.aeon.app.data.local.database.entities.FocusRoutineItemEntity
@@ -109,6 +110,7 @@ import com.aeon.app.data.local.database.entities.TaskSubtaskEntity
         FinanceCategoryEntity::class,
         FinanceTransactionEntity::class,
         BudgetEntity::class,
+        FinanceCounterpartyRecordEntity::class,
 
         // System
         NotificationEntity::class,
@@ -149,7 +151,7 @@ abstract class AeonDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME: String = "aeon_local.db"
-        const val DATABASE_VERSION: Int = 7
+        const val DATABASE_VERSION: Int = 8
 
         @Volatile
         private var INSTANCE: AeonDatabase? = null
@@ -179,7 +181,8 @@ abstract class AeonDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
-                    MIGRATION_6_7
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
                 )
                 .addCallback(AeonDatabaseCallback)
                 .build()
@@ -512,6 +515,45 @@ abstract class AeonDatabase : RoomDatabase() {
                         )
                     )
                 }
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS finance_counterparty_records (
+                        id TEXT NOT NULL,
+                        counterparty_name TEXT NOT NULL,
+                        counterparty_email TEXT,
+                        direction TEXT NOT NULL,
+                        purpose TEXT NOT NULL,
+                        note TEXT,
+                        amount TEXT NOT NULL,
+                        currency TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        occurred_at INTEGER NOT NULL,
+                        email_shared_at INTEGER,
+                        settled_at INTEGER,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        deleted_at INTEGER,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_finance_counterparty_records_status_direction " +
+                        "ON finance_counterparty_records(status, direction)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_finance_counterparty_records_email " +
+                        "ON finance_counterparty_records(counterparty_email)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_finance_counterparty_records_occurred_at " +
+                        "ON finance_counterparty_records(occurred_at)"
+                )
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.aeon.app.domain.validation
 
 import com.aeon.app.data.local.database.entities.FinanceAccountTypeStorage
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyDirectionStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionTypeStorage
 import com.aeon.app.data.local.database.entities.FocusModeStorage
 import com.aeon.app.data.local.database.entities.GoalPriorityStorage
@@ -283,6 +284,24 @@ object AeonValidation {
             error("alertThreshold", "Budget alert threshold must be between 0.10 and 1.00.", AeonValidationCode.InvalidRange)
     }
 
+    fun financeCounterpartyRecord(
+        counterpartyName: String,
+        direction: String,
+        purpose: String,
+        amount: BigDecimal,
+        currency: String = "INR",
+        counterpartyEmail: String? = null,
+        note: String? = null
+    ): AeonValidationResult = buildValidation {
+        requiredText("counterpartyName", counterpartyName, min = 2, max = 120)
+        oneOf("direction", direction, AeonAllowedValues.financeCounterpartyDirections)
+        requiredText("purpose", purpose, min = 2, max = 160)
+        money("amount", amount, allowZero = false)
+        currency("currency", currency)
+        optionalText("note", note, max = 800)
+        optionalEmail("counterpartyEmail", counterpartyEmail)
+    }
+
     fun notification(
         channel: String, title: String, body: String,
         priority: String = NotificationPriorityStorage.Normal,
@@ -464,6 +483,13 @@ private class AeonValidationBuilder {
             error(field, "$field is not a recognized currency.", AeonValidationCode.InvalidCurrency)
     }
 
+    fun optionalEmail(field: String, value: String?) {
+        val clean = value?.trim().orEmpty()
+        if (clean.isBlank()) return
+        if (!AeonFormatRules.EMAIL_REGEX.matches(clean))
+            error(field, "$field must be a valid email address.", AeonValidationCode.InvalidFormat)
+    }
+
     fun tags(field: String, tags: List<String>, max: Int = AeonValidationLimits.MAX_TAGS) {
         if (tags.size > max) error(field, "$field cannot contain more than $max items.", AeonValidationCode.TooManyTags)
         val clean = tags.map { it.trim().lowercase(Locale.ROOT) }
@@ -495,6 +521,7 @@ private object AeonAllowedValues {
     val healthEntryTypes = setOf(HealthEntryTypeStorage.General, HealthEntryTypeStorage.Sleep, HealthEntryTypeStorage.Hydration, HealthEntryTypeStorage.Activity, HealthEntryTypeStorage.Symptom, HealthEntryTypeStorage.Medicine)
     val medicineFrequencies = setOf(MedicineFrequencyStorage.Daily, MedicineFrequencyStorage.TwiceDaily, MedicineFrequencyStorage.Weekly, MedicineFrequencyStorage.Custom)
     val financeAccountTypes = setOf(FinanceAccountTypeStorage.Cash, FinanceAccountTypeStorage.Bank, FinanceAccountTypeStorage.Wallet, FinanceAccountTypeStorage.Upi)
+    val financeCounterpartyDirections = setOf(FinanceCounterpartyDirectionStorage.OwedToMe, FinanceCounterpartyDirectionStorage.IOwe)
     val financeTransactionTypes = setOf(FinanceTransactionTypeStorage.Expense, FinanceTransactionTypeStorage.Income, FinanceTransactionTypeStorage.Transfer)
     val notificationPriorities = setOf(NotificationPriorityStorage.Low, NotificationPriorityStorage.Normal, NotificationPriorityStorage.High, NotificationPriorityStorage.Critical)
     val insightSeverities = setOf(InsightSeverityStorage.Info, InsightSeverityStorage.Positive, InsightSeverityStorage.Warning, InsightSeverityStorage.Critical)
@@ -518,6 +545,7 @@ object AeonValidationLimits {
 object AeonFormatRules {
     val KEY_REGEX = Regex("^[a-z0-9_]+$")
     val CURRENCY_REGEX = Regex("^[A-Z]{3}$")
+    val EMAIL_REGEX = Regex("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", RegexOption.IGNORE_CASE)
     val TIME_24H_REGEX = Regex("^([01]\\d|2[0-3]):[0-5]\\d$")
 
     fun hasUnsafeControlCharacters(value: String): Boolean =

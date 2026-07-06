@@ -1238,6 +1238,71 @@ data class BudgetEntity(
     val deletedAt: Instant? = null
 )
 
+@Entity(
+    tableName = "finance_counterparty_records",
+    indices = [
+        Index(
+            value = ["status", "direction"],
+            name = "index_finance_counterparty_records_status_direction"
+        ),
+        Index(
+            value = ["counterparty_email"],
+            name = "index_finance_counterparty_records_email"
+        ),
+        Index(
+            value = ["occurred_at"],
+            name = "index_finance_counterparty_records_occurred_at"
+        )
+    ]
+)
+data class FinanceCounterpartyRecordEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+
+    @ColumnInfo(name = "counterparty_name")
+    val counterpartyName: String,
+
+    @ColumnInfo(name = "counterparty_email")
+    val counterpartyEmail: String? = null,
+
+    @ColumnInfo(name = "direction")
+    val direction: String = FinanceCounterpartyDirectionStorage.OwedToMe,
+
+    @ColumnInfo(name = "purpose")
+    val purpose: String,
+
+    @ColumnInfo(name = "note")
+    val note: String? = null,
+
+    @ColumnInfo(name = "amount")
+    val amount: BigDecimal,
+
+    @ColumnInfo(name = "currency")
+    val currency: String = "INR",
+
+    @ColumnInfo(name = "status")
+    val status: String = FinanceCounterpartyRecordStatusStorage.Open,
+
+    @ColumnInfo(name = "occurred_at")
+    val occurredAt: Instant = Instant.now(),
+
+    @ColumnInfo(name = "email_shared_at")
+    val emailSharedAt: Instant? = null,
+
+    @ColumnInfo(name = "settled_at")
+    val settledAt: Instant? = null,
+
+    @ColumnInfo(name = "created_at")
+    val createdAt: Instant = Instant.now(),
+
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Instant = Instant.now(),
+
+    @ColumnInfo(name = "deleted_at")
+    val deletedAt: Instant? = null
+)
+
 
 // ----------------------------------------------------
 // Notifications
@@ -1634,6 +1699,16 @@ object FinanceTransactionTypeStorage {
     const val Expense = "expense"
     const val Income = "income"
     const val Transfer = "transfer"
+}
+
+object FinanceCounterpartyDirectionStorage {
+    const val OwedToMe = "owed_to_me"
+    const val IOwe = "i_owe"
+}
+
+object FinanceCounterpartyRecordStatusStorage {
+    const val Open = "open"
+    const val Settled = "settled"
 }
 
 object FinanceCategoryStorage {

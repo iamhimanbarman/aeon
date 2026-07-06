@@ -5,7 +5,9 @@ import com.aeon.app.data.local.database.entities.FinanceCategoryScopeStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
@@ -23,6 +25,17 @@ internal data class FinanceRemoteTransactionQuery(
     val from: String? = null,
     val to: String? = null,
     val limit: Int = 300
+)
+
+internal data class FinanceRemoteCounterpartyShareInput(
+    val counterpartyName: String,
+    val counterpartyEmail: String,
+    val direction: String,
+    val purpose: String,
+    val amount: String,
+    val currency: String,
+    val note: String? = null,
+    val occurredAt: String
 )
 
 internal class FinanceRemoteClient(
@@ -92,6 +105,36 @@ internal class FinanceRemoteClient(
         ).toFinanceTransactions()
     }
 
+    suspend fun shareCounterpartyRecord(
+        accessToken: String,
+        input: FinanceRemoteCounterpartyShareInput
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("counterpartyName", input.counterpartyName)
+            .put("counterpartyEmail", input.counterpartyEmail)
+            .put("direction", input.direction)
+            .put("purpose", input.purpose)
+            .put("amount", input.amount)
+            .put("currency", input.currency)
+            .put("occurredAt", input.occurredAt)
+
+        input.note?.takeIf(String::isNotBlank)?.let { note ->
+            payload.put("note", note)
+        }
+
+        executeJsonObject(
+            Request.Builder()
+                .url(buildUrl("/v1/finance/counterparty-share", emptyMap()))
+                .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
+                .post(
+                    payload.toString()
+                        .toRequestBody("application/json; charset=utf-8".toMediaType())
+                )
+                .build()
+        )
+    }
+
     private fun executeJsonObject(
         path: String,
         accessToken: String,
@@ -105,11 +148,15 @@ internal class FinanceRemoteClient(
                 .get()
                 .build()
         ).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                error(parseErrorMessage(body, response.code))
-            }
-            return if (body.isBlank()) JSONObject() else JSONObject(body)
+            return parseJsonObject(response.body?.string().orEmpty(), response.isSuccessful, response.code)
+        }
+    }
+
+    private fun executeJsonObject(
+        request: Request
+    ): JSONObject {
+        client.newCall(request).execute().use { response ->
+            return parseJsonObject(response.body?.string().orEmpty(), response.isSuccessful, response.code)
         }
     }
 
@@ -167,6 +214,18 @@ internal class FinanceRemoteClient(
             401 -> "Finance cloud session expired."
             else -> "Unable to load finance cloud data right now."
         }
+    }
+
+    private fun parseJsonObject(
+        body: String,
+        isSuccessful: Boolean,
+        code: Int
+    ): JSONObject {
+        if (!isSuccessful) {
+            error(parseErrorMessage(body, code))
+        }
+
+        return if (body.isBlank()) JSONObject() else JSONObject(body)
     }
 }
 

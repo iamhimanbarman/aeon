@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { sendFinanceCounterpartyEmail } from "../../email/email.service.js";
 import { parseMonthKey } from "../../lib/dates.js";
 import { parseWithSchema } from "../../lib/validation.js";
 import {
@@ -20,6 +21,7 @@ import {
 import {
   financeAccountInputSchema,
   financeBudgetQuerySchema,
+  financeCounterpartyShareInputSchema,
   financeCategoryInputSchema,
   financeSetMonthBudgetSchema,
   financeTransactionInputSchema,
@@ -93,5 +95,36 @@ export async function registerFinanceRoutes(app: FastifyInstance): Promise<void>
   app.get("/overview/:month", { preHandler: app.authenticate }, async (request) => {
     const month = parseMonthKey((request.params as { month: string }).month).monthKey;
     return getFinanceOverview(app.db, request.authUser!.userId, month);
+  });
+
+  app.post("/counterparty-share", { preHandler: app.authenticate }, async (request) => {
+    const body = parseWithSchema(
+      financeCounterpartyShareInputSchema,
+      request.body,
+      "Invalid finance account-share payload."
+    );
+
+    const ownerName = request.authUser?.displayName
+      ?? request.authUser?.email
+      ?? "An Aeon user";
+
+    await sendFinanceCounterpartyEmail({
+      recipientEmail: body.counterpartyEmail,
+      recipientName: body.counterpartyName,
+      ownerName,
+      ownerEmail: request.authUser?.email,
+      direction: body.direction,
+      purpose: body.purpose,
+      amount: body.amount,
+      currency: body.currency,
+      occurredAt: body.occurredAt,
+      note: body.note
+    });
+
+    return {
+      ok: true,
+      emailed: true,
+      recipientEmail: body.counterpartyEmail
+    };
   });
 }

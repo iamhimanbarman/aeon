@@ -674,6 +674,14 @@ object FinanceCategoryEditorDestination : AppDestination {
     }
 }
 
+object FinanceCounterpartyRecordsDestination : AppDestination {
+    override val route: String = "finance_counterparty_records"
+    override val baseRoute: String = "finance_counterparty_records"
+    override val title: String = "Borrow & Lend"
+    override val graph: String = AeonGraphs.FINANCE
+    override val group: AeonDestinationGroup = AeonDestinationGroup.Finance
+}
+
 object PrivacySettingsDestination : AppDestination {
     override val route: String = "privacy_settings"
     override val baseRoute: String = "privacy_settings"
@@ -783,7 +791,8 @@ object AeonDestinations {
         FinanceOverviewDestination,
         FinanceBudgetSetupDestination,
         FinanceCategoriesDestination,
-        FinanceCategoryEditorDestination
+        FinanceCategoryEditorDestination,
+        FinanceCounterpartyRecordsDestination
     )
 
     val settings: List<AppDestination> = listOf(

@@ -28,6 +28,7 @@ import com.aeon.app.ui.screens.ai.AiChatScreenRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceBudgetSetupRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceCategoriesRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceCategoryEditorRoute
+import com.aeon.app.ui.screens.finance.AeonFinanceCounterpartyRecordsRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceEntryDetailRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceOverviewRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceRoute
@@ -152,6 +153,9 @@ private fun NavGraphBuilder.aeonTopLevelRoutes(
             },
             onOpenCategories = {
                 navigationState.navigateToDestination(FinanceCategoriesDestination)
+            },
+            onOpenCounterpartyRecords = {
+                navigationState.navigateToFinanceCounterpartyRecords()
             },
             onTopBarConfigChanged = onFinanceTopBarConfigChanged
         )
@@ -616,6 +620,10 @@ private fun NavGraphBuilder.aeonFinanceRoutes(
                 .orEmpty(),
             onBack = navigationState::navigateBack
         )
+    }
+
+    composable(FinanceCounterpartyRecordsDestination.route) {
+        AeonFinanceCounterpartyRecordsRoute()
     }
 }
 

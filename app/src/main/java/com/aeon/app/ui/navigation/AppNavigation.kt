@@ -528,6 +528,10 @@ class AeonNavigationState(
         navigateToRoute(FinanceEntryDetailDestination.createRoute(entryId))
     }
 
+    fun navigateToFinanceCounterpartyRecords() {
+        navigateToRoute(FinanceCounterpartyRecordsDestination.route)
+    }
+
 
     fun navigateToJournalEntryDetail(
         entryId: String

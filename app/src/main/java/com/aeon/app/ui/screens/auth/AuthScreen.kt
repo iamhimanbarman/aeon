@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aeon.app.R
+import com.aeon.app.data.auth.AuthEvent
 import com.aeon.app.data.auth.AuthException
 import com.aeon.app.data.auth.AuthRepository
 import com.aeon.app.data.auth.AuthSessionState
@@ -94,6 +95,12 @@ private enum class AuthStep {
     SignIn
 }
 
+private enum class AuthSubmitAction {
+    Primary,
+    Google,
+    Resend
+}
+
 @Composable
 fun AeonAuthFlow(
     authRepository: AuthRepository
@@ -114,15 +121,32 @@ fun AeonAuthFlow(
     var confirmPassword by rememberSaveable { mutableStateOf("") }
     var otpCode by rememberSaveable { mutableStateOf("") }
     var signupToken by rememberSaveable { mutableStateOf("") }
-    var isSubmitting by rememberSaveable { mutableStateOf(false) }
+    var pendingAction by rememberSaveable { mutableStateOf<String?>(null) }
     var resendAvailableAtMillis by rememberSaveable { mutableLongStateOf(0L) }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
     var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
 
     val step = remember(currentStep) { AuthStep.valueOf(currentStep) }
+    val isSubmitting = pendingAction != null
 
     LaunchedEffect(authRepository) {
         runCatching { authRepository.refreshProviderStatus() }
+    }
+
+    LaunchedEffect(authRepository, toastHostState) {
+        authRepository.events.collect { event ->
+            when (event) {
+                is AuthEvent.Error -> toastHostState.showError(
+                    title = event.message,
+                    duration = AeonToastDuration.Normal
+                )
+
+                is AuthEvent.Info -> toastHostState.showSuccess(
+                    title = event.message,
+                    duration = AeonToastDuration.Short
+                )
+            }
+        }
     }
 
     val resendCountdown by produceState(initialValue = 0, resendAvailableAtMillis) {
@@ -146,10 +170,18 @@ fun AeonAuthFlow(
 
     if (sessionState !is AuthSessionState.SignedOut) return
 
-    fun submit(block: suspend () -> Unit) {
-        scope.launch {
-            isSubmitting = true
+    fun isActionSubmitting(action: AuthSubmitAction): Boolean {
+        return pendingAction == action.name
+    }
 
+    fun submit(
+        action: AuthSubmitAction = AuthSubmitAction.Primary,
+        block: suspend () -> Unit
+    ) {
+        if (pendingAction != null) return
+        pendingAction = action.name
+
+        scope.launch {
             try {
                 block()
             } catch (throwable: Throwable) {
@@ -158,7 +190,7 @@ fun AeonAuthFlow(
                     duration = AeonToastDuration.Normal
                 )
             } finally {
-                isSubmitting = false
+                pendingAction = null
             }
         }
     }
@@ -300,15 +332,17 @@ fun AeonAuthFlow(
                                             )
                                         }
                                     },
-                                    loading = isSubmitting
+                                    loading = isActionSubmitting(AuthSubmitAction.Primary)
                                 )
 
-                                if (providerStatus.gmailEnabled) {
+                                if (providerStatus.googleEnabled) {
                                     Spacer(modifier = Modifier.height(12.dp))
 
                                     AeonGoogleButton(
+                                        loading = isActionSubmitting(AuthSubmitAction.Google),
+                                        enabled = !isSubmitting,
                                         onClick = {
-                                            submit {
+                                            submit(AuthSubmitAction.Google) {
                                                 val url = authRepository.getGoogleAuthUrl()
                                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                                                 toastHostState.showInfo(
@@ -376,15 +410,17 @@ fun AeonAuthFlow(
                                             authRepository.signIn(email, password)
                                         }
                                     },
-                                    loading = isSubmitting
+                                    loading = isActionSubmitting(AuthSubmitAction.Primary)
                                 )
 
-                                if (providerStatus.gmailEnabled) {
+                                if (providerStatus.googleEnabled) {
                                     Spacer(modifier = Modifier.height(12.dp))
 
                                     AeonGoogleButton(
+                                        loading = isActionSubmitting(AuthSubmitAction.Google),
+                                        enabled = !isSubmitting,
                                         onClick = {
-                                            submit {
+                                            submit(AuthSubmitAction.Google) {
                                                 val url = authRepository.getGoogleAuthUrl()
                                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                                                 toastHostState.showInfo(
@@ -435,7 +471,7 @@ fun AeonAuthFlow(
                                             }
                                         }
                                     },
-                                    loading = isSubmitting
+                                    loading = isActionSubmitting(AuthSubmitAction.Primary)
                                 )
 
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -460,7 +496,7 @@ fun AeonAuthFlow(
                                         style = AeonTextStyles.ButtonMedium,
                                         color = if (resendCountdown > 0) colors.textDisabled else colors.textPrimary,
                                         modifier = Modifier.clickable(enabled = resendCountdown == 0 && !isSubmitting) {
-                                            submit {
+                                            submit(AuthSubmitAction.Resend) {
                                                 val result = authRepository.requestSignupOtp(email)
                                                 resendAvailableAtMillis =
                                                     System.currentTimeMillis() + result.resendAfterSeconds * 1_000L
@@ -554,7 +590,7 @@ fun AeonAuthFlow(
                                             )
                                         }
                                     },
-                                    loading = isSubmitting
+                                    loading = isActionSubmitting(AuthSubmitAction.Primary)
                                 )
                             }
                         }
@@ -915,12 +951,15 @@ private fun AeonAuthSecondaryButton(
     text: String,
     onClick: () -> Unit,
     buttonHeight: Dp = 54.dp,
+    enabled: Boolean = true,
+    loading: Boolean = false,
     leadingIcon: (@Composable () -> Unit)? = null
 ) {
     val colors = AeonThemeTokens.colors
 
     Surface(
         onClick = onClick,
+        enabled = enabled && !loading,
         modifier = modifier.height(buttonHeight),
         shape = CircleShape,
         color = colors.surface.copy(alpha = 0.92f),
@@ -933,7 +972,14 @@ private fun AeonAuthSecondaryButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            if (leadingIcon != null) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = colors.textPrimary
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            } else if (leadingIcon != null) {
                 leadingIcon()
                 Spacer(modifier = Modifier.width(10.dp))
             }
@@ -949,6 +995,8 @@ private fun AeonAuthSecondaryButton(
 
 @Composable
 private fun AeonGoogleButton(
+    loading: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     AeonAuthSecondaryButton(
@@ -956,6 +1004,8 @@ private fun AeonGoogleButton(
         text = "Google",
         onClick = onClick,
         buttonHeight = 58.dp,
+        enabled = enabled,
+        loading = loading,
         leadingIcon = {
             AeonGoogleMark(modifier = Modifier.size(18.dp))
         }

@@ -7,7 +7,7 @@ services:
     healthCheckPath: /health/ready
     buildCommand: npm ci && npm run build
     preDeployCommand: npm run db:migrate
-    startCommand: npm run start
+    startCommand: npm run start:render
     envVars:
       - key: NODE_ENV
         value: production
@@ -62,8 +62,8 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: GOOGLE_OAUTH_CLIENT_ID
-        sync: false
+        value: 279935595299-p1s6m4grg47600q8sq7bl64q48eiakga.apps.googleusercontent.com
       - key: GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
       - key: GOOGLE_OAUTH_REDIRECT_URI
-        sync: false
+        value: https://aeon-9cds.onrender.com/v1/auth/google/callback

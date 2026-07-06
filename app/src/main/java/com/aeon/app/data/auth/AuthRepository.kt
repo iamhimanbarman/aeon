@@ -10,8 +10,11 @@ import com.aeon.app.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
@@ -34,8 +37,16 @@ sealed interface AuthSessionState {
 }
 
 data class AuthProviderStatus(
-    val gmailEnabled: Boolean = false
-)
+    val googleEnabled: Boolean = false
+) {
+    val gmailEnabled: Boolean
+        get() = googleEnabled
+}
+
+sealed interface AuthEvent {
+    data class Info(val message: String) : AuthEvent
+    data class Error(val message: String) : AuthEvent
+}
 
 data class AuthUserProfile(
     val id: String,
@@ -92,6 +103,9 @@ class AuthRepository(
     private val _providerStatus = MutableStateFlow(AuthProviderStatus())
     val providerStatus: StateFlow<AuthProviderStatus> = _providerStatus.asStateFlow()
 
+    private val _events = MutableSharedFlow<AuthEvent>(extraBufferCapacity = 8)
+    val events: SharedFlow<AuthEvent> = _events.asSharedFlow()
+
     fun initialize() {
         if (!initialized.compareAndSet(false, true)) return
 
@@ -112,6 +126,7 @@ class AuthRepository(
                 !error.isNullOrBlank() -> {
                     store.clear()
                     _sessionState.value = localFallbackState()
+                    _events.tryEmit(AuthEvent.Error("Google sign-in cancelled"))
                 }
 
                 !exchangeCode.isNullOrBlank() -> {
@@ -119,9 +134,11 @@ class AuthRepository(
                         api.exchangeGoogleCode(exchangeCode)
                     }.onSuccess { session ->
                         persistSession(session)
+                        _events.tryEmit(AuthEvent.Info("Signed in with Google"))
                     }.onFailure {
                         store.clear()
                         _sessionState.value = localFallbackState()
+                        _events.tryEmit(AuthEvent.Error("Google sign-in failed"))
                     }
                 }
             }
@@ -184,7 +201,7 @@ class AuthRepository(
         ensureConfigured()
         refreshProviderStatus()
 
-        if (!_providerStatus.value.gmailEnabled) {
+        if (!_providerStatus.value.googleEnabled) {
             throw AuthException("Google sign-in is unavailable right now.")
         }
 
@@ -264,9 +281,9 @@ private class AuthApiClient(
                 .build()
         )
 
-        val gmail = response.optJSONObject("gmail")
+        val google = response.optJSONObject("google") ?: response.optJSONObject("gmail")
         return AuthProviderStatus(
-            gmailEnabled = gmail?.optBoolean("enabled", false) == true
+            googleEnabled = google?.optBoolean("enabled", false) == true
         )
     }
 
@@ -436,11 +453,18 @@ private class AuthApiClient(
             ?: throw AuthException("Missing account details from auth response.")
 
         val expiresInSeconds = response.optLong("expiresInSeconds")
+        val accessToken = response.optString("accessToken")
+        val refreshToken = response.optString("refreshToken")
+
+        if (accessToken.isBlank() || refreshToken.isBlank() || expiresInSeconds <= 0L) {
+            throw AuthException("Invalid auth session from server.")
+        }
+
         val currentEpoch = System.currentTimeMillis() / 1000L
 
         return AuthSession(
-            accessToken = response.optString("accessToken"),
-            refreshToken = response.optString("refreshToken"),
+            accessToken = accessToken,
+            refreshToken = refreshToken,
             expiresAtEpochSeconds = currentEpoch + expiresInSeconds,
             user = AuthUserProfile(
                 id = userJson.optString("id"),

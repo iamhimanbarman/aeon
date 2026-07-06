@@ -51,6 +51,11 @@ Current schema coverage:
 - `AUTH_EMAIL_FROM`
 - `RESEND_API_KEY`
 - `NODE_ENV=production`
+- `CORS_ORIGIN=https://aeon-9cds.onrender.com`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI=https://aeon-9cds.onrender.com/v1/auth/google/callback`
+- `AUTH_ALLOWED_MOBILE_REDIRECT_URIS=aeon://auth/callback`
 
 Recommended:
 
@@ -63,10 +68,6 @@ Optional compatibility / provider variables:
 
 - `SUPABASE_URL`
 - `SUPABASE_JWT_AUDIENCE`
-- `GOOGLE_OAUTH_CLIENT_ID`
-- `GOOGLE_OAUTH_CLIENT_SECRET`
-- `GOOGLE_OAUTH_REDIRECT_URI`
-- `AUTH_ALLOWED_MOBILE_REDIRECT_URIS`
 
 ## Auth Notes
 

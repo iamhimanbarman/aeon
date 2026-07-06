@@ -169,12 +169,14 @@ export async function getAuthProfile(db, userId) {
     };
 }
 export function getAuthProviderStatus() {
+    const google = {
+        enabled: Boolean(env.GOOGLE_OAUTH_CLIENT_ID &&
+            env.GOOGLE_OAUTH_CLIENT_SECRET &&
+            env.GOOGLE_OAUTH_REDIRECT_URI)
+    };
     return {
-        gmail: {
-            enabled: Boolean(env.GOOGLE_OAUTH_CLIENT_ID &&
-                env.GOOGLE_OAUTH_CLIENT_SECRET &&
-                env.GOOGLE_OAUTH_REDIRECT_URI)
-        }
+        google,
+        gmail: google
     };
 }
 export async function buildGoogleStartUrl(db, mobileRedirectUri) {
@@ -212,6 +214,7 @@ export async function completeGoogleCallback(db, input) {
     if (state == null || state.consumed_at != null || new Date(state.expires_at).getTime() <= Date.now()) {
         throw badRequest("The Google sign-in session is invalid or expired.");
     }
+    assertAllowedMobileRedirectUri(state.mobile_redirect_uri);
     await consumeOAuthState(db, state.id);
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",

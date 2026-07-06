@@ -86,4 +86,27 @@ if (
   throw new Error("Invalid backend environment: GOOGLE_OAUTH_REDIRECT_URI must use HTTPS in production.");
 }
 
+const googleOAuthConfigured = Boolean(
+  env.GOOGLE_OAUTH_CLIENT_ID &&
+    env.GOOGLE_OAUTH_CLIENT_SECRET &&
+    env.GOOGLE_OAUTH_REDIRECT_URI
+);
+const googleOAuthPartiallyConfigured = Boolean(
+  env.GOOGLE_OAUTH_CLIENT_ID ||
+    env.GOOGLE_OAUTH_CLIENT_SECRET ||
+    env.GOOGLE_OAUTH_REDIRECT_URI
+) && !googleOAuthConfigured;
+
+if (googleOAuthPartiallyConfigured) {
+  throw new Error(
+    "Invalid backend environment: Google OAuth requires GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, and GOOGLE_OAUTH_REDIRECT_URI together."
+  );
+}
+
+if (env.NODE_ENV === "production" && !googleOAuthConfigured) {
+  throw new Error(
+    "Invalid backend environment: Google OAuth must be configured in production."
+  );
+}
+
 export type AppEnv = typeof env;

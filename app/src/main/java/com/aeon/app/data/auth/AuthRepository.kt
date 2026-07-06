@@ -199,12 +199,6 @@ class AuthRepository(
 
     suspend fun getGoogleAuthUrl(): String {
         ensureConfigured()
-        refreshProviderStatus()
-
-        if (!_providerStatus.value.googleEnabled) {
-            throw AuthException("Google sign-in is unavailable right now.")
-        }
-
         return api.getGoogleStartUrl(mobileRedirectUri)
     }
 

@@ -106,7 +106,6 @@ fun AeonAuthFlow(
     authRepository: AuthRepository
 ) {
     val sessionState by authRepository.sessionState.collectAsState()
-    val providerStatus by authRepository.providerStatus.collectAsState()
     val colors = AeonThemeTokens.colors
     val scrollState = rememberScrollState()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -335,24 +334,22 @@ fun AeonAuthFlow(
                                     loading = isActionSubmitting(AuthSubmitAction.Primary)
                                 )
 
-                                if (providerStatus.googleEnabled) {
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                                    AeonGoogleButton(
-                                        loading = isActionSubmitting(AuthSubmitAction.Google),
-                                        enabled = !isSubmitting,
-                                        onClick = {
-                                            submit(AuthSubmitAction.Google) {
-                                                val url = authRepository.getGoogleAuthUrl()
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                                toastHostState.showInfo(
-                                                    title = "Continue with Google",
-                                                    duration = AeonToastDuration.Normal
-                                                )
-                                            }
+                                AeonGoogleButton(
+                                    loading = isActionSubmitting(AuthSubmitAction.Google),
+                                    enabled = !isSubmitting,
+                                    onClick = {
+                                        submit(AuthSubmitAction.Google) {
+                                            val url = authRepository.getGoogleAuthUrl()
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                            toastHostState.showInfo(
+                                                title = "Continue with Google",
+                                                duration = AeonToastDuration.Normal
+                                            )
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             }
                         }
 
@@ -413,24 +410,22 @@ fun AeonAuthFlow(
                                     loading = isActionSubmitting(AuthSubmitAction.Primary)
                                 )
 
-                                if (providerStatus.googleEnabled) {
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                                    AeonGoogleButton(
-                                        loading = isActionSubmitting(AuthSubmitAction.Google),
-                                        enabled = !isSubmitting,
-                                        onClick = {
-                                            submit(AuthSubmitAction.Google) {
-                                                val url = authRepository.getGoogleAuthUrl()
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                                toastHostState.showInfo(
-                                                    title = "Continue with Google",
-                                                    duration = AeonToastDuration.Normal
-                                                )
-                                            }
+                                AeonGoogleButton(
+                                    loading = isActionSubmitting(AuthSubmitAction.Google),
+                                    enabled = !isSubmitting,
+                                    onClick = {
+                                        submit(AuthSubmitAction.Google) {
+                                            val url = authRepository.getGoogleAuthUrl()
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                            toastHostState.showInfo(
+                                                title = "Continue with Google",
+                                                duration = AeonToastDuration.Normal
+                                            )
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             }
                         }
 

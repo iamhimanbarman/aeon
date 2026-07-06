@@ -5,8 +5,15 @@ export async function registerAuthRoutes(app) {
     app.get("/providers", async () => {
         return getAuthProviderStatus();
     });
-    app.get("/google/start", async (request) => {
-        const query = parseWithSchema(authGoogleStartQuerySchema, request.query, "Invalid Gmail start payload.");
+    app.get("/google/start", {
+        config: {
+            rateLimit: {
+                max: 20,
+                timeWindow: 60_000
+            }
+        }
+    }, async (request) => {
+        const query = parseWithSchema(authGoogleStartQuerySchema, request.query, "Invalid Google sign-in payload.");
         return buildGoogleStartUrl(app.db, query.mobileRedirectUri);
     });
     app.get("/google/callback", async (request, reply) => {
@@ -24,8 +31,15 @@ export async function registerAuthRoutes(app) {
         });
         return reply.redirect(result.redirectUrl);
     });
-    app.post("/google/exchange", async (request) => {
-        const body = parseWithSchema(authGoogleExchangeSchema, request.body, "Invalid Gmail exchange payload.");
+    app.post("/google/exchange", {
+        config: {
+            rateLimit: {
+                max: 30,
+                timeWindow: 60_000
+            }
+        }
+    }, async (request) => {
+        const body = parseWithSchema(authGoogleExchangeSchema, request.body, "Invalid Google sign-in payload.");
         return exchangeGoogleCodeForSession(app.db, body.exchangeCode, resolveContext(request));
     });
     app.post("/signup/request-otp", {

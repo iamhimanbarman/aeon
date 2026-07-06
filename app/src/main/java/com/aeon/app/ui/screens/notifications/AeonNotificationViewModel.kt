@@ -580,6 +580,20 @@ class AeonNotificationViewModel(
     }
 
 
+    fun markAllAsRead() {
+        launchOperation(
+            successMessage = "All unread notifications marked as read."
+        ) {
+            uiState.value.records
+                .asSequence()
+                .filter { it.status.name == "Delivered" }
+                .forEach { record ->
+                    notificationCenter.markTapped(record.payloadId)
+                }
+        }
+    }
+
+
     fun clearHistory() {
         launchOperation(
             successMessage = "Notification history cleared."

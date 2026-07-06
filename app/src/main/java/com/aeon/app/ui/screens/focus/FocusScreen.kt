@@ -69,6 +69,7 @@ import com.aeon.app.data.local.database.entities.FocusRoutineStatusStorage
 import com.aeon.app.data.local.database.entities.FocusRoutineTimeTypeStorage
 import com.aeon.app.di.aeonViewModel
 import com.aeon.app.domain.focus.FocusRoutineDraft
+import com.aeon.app.domain.focus.FocusRoutineScheduleRules
 import com.aeon.app.domain.focus.FocusRoutineTextLimits
 import com.aeon.app.presentation.viewmodel.AeonFocusViewModel
 import com.aeon.app.presentation.viewmodel.FocusViewState
@@ -81,8 +82,9 @@ import com.aeon.app.ui.components.core.AeonChipVariant
 import com.aeon.app.ui.components.core.AeonTextField
 import com.aeon.app.ui.components.core.AeonTextFieldVariant
 import com.aeon.app.ui.components.core.AeonTimePickerDialog
-import com.aeon.app.ui.components.feedback.AeonBottomSheet
+import com.aeon.app.ui.components.feedback.AeonToastDuration
 import com.aeon.app.ui.components.feedback.AeonDialog
+import com.aeon.app.ui.components.feedback.LocalAeonToastHostState
 import com.aeon.app.ui.components.layout.AeonScreen
 import com.aeon.app.ui.components.layout.AeonScreenConfig
 import com.aeon.app.ui.components.layout.aeonPremiumBackgroundBrush
@@ -217,6 +219,7 @@ fun FocusTopBarActions(config: FocusTopBarConfig) {
 @Composable
 fun AeonFocusRoute(
     modifier: Modifier = Modifier,
+    onOpenRoutineRecords: (YearMonth) -> Unit = {},
     onTopBarConfigChanged: (FocusTopBarConfig) -> Unit = {}
 ) {
     val viewModel = aeonViewModel<AeonFocusViewModel>()
@@ -229,6 +232,7 @@ fun AeonFocusRoute(
         onRefresh = viewModel::refreshRoutines,
         onAddRoutine = viewModel::addRoutine,
         onDeleteRoutine = viewModel::deleteRoutine,
+        onOpenRoutineRecords = onOpenRoutineRecords,
         onTopBarConfigChanged = onTopBarConfigChanged
     )
 }
@@ -241,6 +245,7 @@ private fun FocusScreen(
     onRefresh: () -> Unit,
     onAddRoutine: (FocusRoutineDraft) -> Unit,
     onDeleteRoutine: (String) -> Unit,
+    onOpenRoutineRecords: (YearMonth) -> Unit,
     onTopBarConfigChanged: (FocusTopBarConfig) -> Unit
 ) {
     val selectedDate = state.selectedDate
@@ -252,7 +257,6 @@ private fun FocusScreen(
     }
 
     var showDatePicker by remember { mutableStateOf(false) }
-    var showRecords by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<FocusRoutineOccurrenceEntity?>(null) }
 
     val topBarConfig = remember(selectedDate) {
@@ -260,7 +264,7 @@ private fun FocusScreen(
             selectedDate = selectedDate,
             onDateClick = { showDatePicker = true },
             onDateSelected = onDateSelected,
-            onRecordsClick = { showRecords = true },
+            onRecordsClick = { onOpenRoutineRecords(YearMonth.from(selectedDate)) },
             onRefreshClick = onRefresh,
             onJumpToToday = { onDateSelected(LocalDate.now()) }
         )
@@ -285,6 +289,7 @@ private fun FocusScreen(
 
         QuickRoutineComposer(
             selectedDate = selectedDate,
+            existingOccurrences = sortedOccurrences,
             onAddRoutine = onAddRoutine
         )
     }
@@ -297,13 +302,6 @@ private fun FocusScreen(
                 onDateSelected(date)
                 showDatePicker = false
             }
-        )
-    }
-
-    if (showRecords) {
-        RoutineRecordsSheet(
-            records = state.weeklyOccurrences,
-            onDismiss = { showRecords = false }
         )
     }
 
@@ -322,9 +320,16 @@ private fun FocusScreen(
 @Composable
 private fun QuickRoutineComposer(
     selectedDate: LocalDate,
+    existingOccurrences: List<FocusRoutineOccurrenceEntity>,
     onAddRoutine: (FocusRoutineDraft) -> Unit
 ) {
-    val initialRange = remember(selectedDate) { defaultRoutineTimeRange(selectedDate) }
+    val toastHostState = LocalAeonToastHostState.current
+    val initialRange = remember(selectedDate) {
+        defaultRoutineTimeRange(
+            date = selectedDate,
+            existingOccurrences = existingOccurrences
+        )
+    }
     var title by remember(selectedDate) { mutableStateOf("") }
     var details by remember(selectedDate) { mutableStateOf("") }
     var startMinutes by remember(selectedDate) { mutableIntStateOf(initialRange.first) }
@@ -332,27 +337,86 @@ private fun QuickRoutineComposer(
     var showOptions by remember(selectedDate) { mutableStateOf(false) }
     var pickingStart by remember { mutableStateOf(false) }
     var pickingEnd by remember { mutableStateOf(false) }
-    var timeError by remember(selectedDate) { mutableStateOf<String?>(null) }
-
     val titleWords = title.wordCount()
     val detailWords = details.wordCount()
+    val pendingDraft = remember(
+        title,
+        details,
+        startMinutes,
+        endMinutes
+    ) {
+        FocusRoutineDraft(
+            title = FocusRoutineTextLimits.enforceTitle(title.ifBlank { "Routine" }),
+            description = FocusRoutineTextLimits.enforceDetails(details),
+            category = "personal",
+            timeType = FocusRoutineTimeTypeStorage.ExactTime,
+            startTimeMinutes = startMinutes,
+            endTimeMinutes = endMinutes,
+            durationMinutes = endMinutes - startMinutes,
+            reminderMinutesBefore = 5
+        )
+    }
+    val scheduleError = remember(
+        pendingDraft,
+        existingOccurrences
+    ) {
+        FocusRoutineScheduleRules.validateNewDraft(
+            draft = pendingDraft,
+            existingOccurrences = existingOccurrences
+        )
+    }
     val canAdd = title.isNotBlank() &&
         titleWords <= FocusRoutineTextLimits.TitleWords &&
         detailWords <= FocusRoutineTextLimits.DetailWords &&
         endMinutes > startMinutes &&
-        timeError == null
+        scheduleError == null
     val colors = AeonThemeTokens.colors
     val composerBringIntoViewRequester = remember { BringIntoViewRequester() }
     val titleInteractionSource = remember { MutableInteractionSource() }
     val detailsInteractionSource = remember { MutableInteractionSource() }
     val titleFocused by titleInteractionSource.collectIsFocusedAsState()
     val detailsFocused by detailsInteractionSource.collectIsFocusedAsState()
+    val suggestedRange = remember(selectedDate, existingOccurrences) {
+        defaultRoutineTimeRange(
+            date = selectedDate,
+            existingOccurrences = existingOccurrences
+        )
+    }
+    var lastScheduleErrorToast by remember(selectedDate) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(showOptions, titleFocused, detailsFocused) {
         if (showOptions || titleFocused || detailsFocused) {
             delay(120)
             composerBringIntoViewRequester.bringIntoView()
         }
+    }
+
+    LaunchedEffect(selectedDate, existingOccurrences) {
+        if (title.isBlank() && details.isBlank()) {
+            startMinutes = suggestedRange.first
+            endMinutes = suggestedRange.last
+        }
+    }
+
+    LaunchedEffect(scheduleError, showOptions, title) {
+        val activeScheduleError = scheduleError?.takeIf {
+            showOptions && title.isNotBlank()
+        }
+
+        if (activeScheduleError == null) {
+            lastScheduleErrorToast = null
+            return@LaunchedEffect
+        }
+
+        if (activeScheduleError == lastScheduleErrorToast) {
+            return@LaunchedEffect
+        }
+
+        lastScheduleErrorToast = activeScheduleError
+        toastHostState.showError(
+            title = activeScheduleError.toFocusScheduleToastText(),
+            duration = AeonToastDuration.Short
+        )
     }
 
     Row(
@@ -455,10 +519,10 @@ private fun QuickRoutineComposer(
                         style = AeonTextStyles.Micro.copy(color = colors.textTertiary)
                     )
 
-                    if (timeError != null) {
+                    if (existingOccurrences.isNotEmpty()) {
                         Text(
-                            text = timeError.orEmpty(),
-                            style = AeonTextStyles.Micro.copy(color = colors.error)
+                            text = "Each new routine starts after the last saved block ends.",
+                            style = AeonTextStyles.Micro.copy(color = colors.textTertiary)
                         )
                     }
                 }
@@ -471,6 +535,7 @@ private fun QuickRoutineComposer(
                 .padding(top = 4.dp)
                 .size(40.dp),
             onClick = {
+                if (scheduleError != null) return@IconButton
                 onAddRoutine(
                     FocusRoutineDraft(
                         title = FocusRoutineTextLimits.enforceTitle(title),
@@ -483,12 +548,14 @@ private fun QuickRoutineComposer(
                         reminderMinutesBefore = 5
                     )
                 )
-                val resetRange = defaultRoutineTimeRange(selectedDate)
+                val resetRange = nextSequentialRoutineTimeRange(
+                    selectedDate = selectedDate,
+                    latestEndMinutes = endMinutes
+                )
                 title = ""
                 details = ""
                 startMinutes = resetRange.first
                 endMinutes = resetRange.last
-                timeError = null
                 showOptions = false
             }
         ) {
@@ -511,7 +578,6 @@ private fun QuickRoutineComposer(
                 if (endMinutes <= safeStart) {
                     endMinutes = (safeStart + 60).coerceAtMost(23 * 60 + 59)
                 }
-                timeError = null
                 pickingStart = false
             }
         )
@@ -522,12 +588,7 @@ private fun QuickRoutineComposer(
             minutes = endMinutes,
             onDismiss = { pickingEnd = false },
             onSelected = { selected ->
-                if (selected <= startMinutes) {
-                    timeError = "Choose an end time after the start time."
-                } else {
-                    endMinutes = selected
-                    timeError = null
-                }
+                endMinutes = selected
                 pickingEnd = false
             }
         )
@@ -938,81 +999,6 @@ private fun DeleteRoutineDialog(
 }
 
 @Composable
-private fun RoutineRecordsSheet(
-    records: List<FocusRoutineOccurrenceEntity>,
-    onDismiss: () -> Unit
-) {
-    val colors = AeonThemeTokens.colors
-    val grouped = records
-        .sortedWith(compareByDescending<FocusRoutineOccurrenceEntity> { it.date }.thenBy { it.plannedStartAt })
-        .groupBy { it.date }
-
-    AeonBottomSheet(onDismissRequest = onDismiss) {
-        Text(
-            text = "Routine records",
-            style = AeonTextStyles.SectionTitle.copy(color = colors.textPrimary)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = "Recent routine activity and unfinished work.",
-            style = AeonTextStyles.Caption.copy(color = colors.textSecondary)
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-
-        if (grouped.isEmpty()) {
-            Text(
-                text = "No routine records yet.",
-                style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                grouped.forEach { (date, dayRecords) ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(colors.surfaceElevated)
-                            .padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Text(
-                            text = date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault())),
-                            style = AeonTextStyles.CardTitle.copy(color = colors.textPrimary)
-                        )
-                        dayRecords.forEach { occurrence ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = occurrence.timeRangeLabel(),
-                                    style = AeonTextStyles.Micro.copy(color = colors.brand),
-                                    modifier = Modifier.width(88.dp),
-                                    maxLines = 1
-                                )
-                                Text(
-                                    text = occurrence.title,
-                                    style = AeonTextStyles.Caption.copy(color = colors.textSecondary),
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = occurrence.status.recordStatusLabel(),
-                                    style = AeonTextStyles.Micro.copy(color = colors.textTertiary),
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SmartTimePicker(
     minutes: Int,
     onDismiss: () -> Unit,
@@ -1029,16 +1015,28 @@ private fun SmartTimePicker(
     )
 }
 
-private fun defaultRoutineTimeRange(date: LocalDate): IntRange {
-    val start = if (date == LocalDate.now()) {
-        val now = LocalTime.now()
-        (((now.hour * 60 + now.minute + 14) / 15) * 15).coerceAtMost(23 * 60)
+private fun defaultRoutineTimeRange(
+    date: LocalDate,
+    existingOccurrences: List<FocusRoutineOccurrenceEntity> = emptyList()
+): IntRange {
+    return FocusRoutineScheduleRules.suggestedTimedRange(
+        date = date,
+        existingOccurrences = existingOccurrences,
+        now = LocalTime.now()
+    )
+}
+
+private fun nextSequentialRoutineTimeRange(
+    selectedDate: LocalDate,
+    latestEndMinutes: Int
+): IntRange {
+    val safeStart = latestEndMinutes.coerceAtMost(23 * 60 + 58)
+    val safeEnd = (safeStart + 60).coerceAtMost(23 * 60 + 59)
+    return if (selectedDate == LocalDate.now() && safeStart < defaultRoutineTimeRange(selectedDate).first) {
+        defaultRoutineTimeRange(selectedDate)
     } else {
-        9 * 60
+        safeStart..safeEnd.coerceAtLeast(safeStart + 1)
     }
-    val safeStart = start.coerceAtMost(23 * 60)
-    val end = (safeStart + 60).coerceAtMost(23 * 60 + 59)
-    return safeStart..end
 }
 
 private fun FocusRoutineOccurrenceEntity.startTimeLabel(): String =
@@ -1143,4 +1141,17 @@ private fun String.recordStatusLabel(): String = when (this) {
     FocusRoutineStatusStorage.Snoozed -> "Snoozed"
     FocusRoutineStatusStorage.Skipped -> "Skipped"
     else -> "Open"
+}
+
+private fun String.toFocusScheduleToastText(): String = when {
+    contains("End time must be after start time", ignoreCase = true) -> {
+        "End after start"
+    }
+    contains("start after the previous one ends", ignoreCase = true) -> {
+        "Pick a later start"
+    }
+    contains("overlaps with", ignoreCase = true) -> {
+        "Time overlaps"
+    }
+    else -> "Fix routine time"
 }

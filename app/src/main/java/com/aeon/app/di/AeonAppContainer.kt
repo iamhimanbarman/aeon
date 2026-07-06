@@ -68,6 +68,8 @@ interface AeonAppContainer {
 
     suspend fun initializeAppDefaults()
 
+    fun warmUpNavigationDependencies()
+
     fun close()
 }
 
@@ -121,9 +123,9 @@ class DefaultAeonAppContainer(
 
     override val viewModelFactory: AeonViewModelFactory by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AeonViewModelFactory(
-            useCases = useCases,
-            repositories = repositories,
-            newsRepository = newsRepository
+            useCasesProvider = { useCases },
+            repositoriesProvider = { repositories },
+            newsRepositoryProvider = { newsRepository }
         )
     }
 
@@ -132,6 +134,15 @@ class DefaultAeonAppContainer(
         repositories.finance.ensureDefaultCategories()
         AeonSeedData.removeDemoData(database)
         AeonSeedData.seedProductionDefaultsIfNeeded(database)
+    }
+
+    override fun warmUpNavigationDependencies() {
+        authRepository
+        database
+        repositories
+        useCases
+        newsRepository
+        viewModelFactory
     }
 
     override fun close() {
@@ -180,9 +191,9 @@ class PreviewAeonAppContainer(
 
     override val viewModelFactory: AeonViewModelFactory by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AeonViewModelFactory(
-            useCases = useCases,
-            repositories = repositories,
-            newsRepository = newsRepository
+            useCasesProvider = { useCases },
+            repositoriesProvider = { repositories },
+            newsRepositoryProvider = { newsRepository }
         )
     }
 
@@ -191,6 +202,15 @@ class PreviewAeonAppContainer(
         repositories.finance.ensureDefaultCategories()
         AeonSeedData.removeDemoData(database)
         AeonSeedData.seedProductionDefaultsIfNeeded(database)
+    }
+
+    override fun warmUpNavigationDependencies() {
+        authRepository
+        database
+        repositories
+        useCases
+        newsRepository
+        viewModelFactory
     }
 
     override fun close() {

@@ -33,6 +33,7 @@ import com.aeon.app.ui.screens.finance.AeonFinanceOverviewRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceRoute
 import com.aeon.app.ui.screens.finance.FinanceTopBarConfig
 import com.aeon.app.ui.screens.focus.AeonFocusRoute
+import com.aeon.app.ui.screens.focus.AeonFocusRoutineRecordsRoute
 import com.aeon.app.ui.screens.focus.FocusTopBarConfig
 import com.aeon.app.ui.screens.goals.AeonGoalRoute
 import com.aeon.app.ui.screens.habits.AeonHabitRoute
@@ -77,18 +78,21 @@ fun AppNavGraph(
     onFocusTopBarConfigChanged: (FocusTopBarConfig) -> Unit = {},
     onFinanceTopBarConfigChanged: (FinanceTopBarConfig) -> Unit = {}
 ) {
+    val enterTransition = remember(motionScale) { aeonEnterTransition(motionScale) }
+    val exitTransition = remember(motionScale) { aeonExitTransition(motionScale) }
+    val popEnterTransition = remember(motionScale) { aeonPopEnterTransition(motionScale) }
+    val popExitTransition = remember(motionScale) { aeonPopExitTransition(motionScale) }
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier,
         route = AeonGraphs.MAIN,
-        enterTransition = aeonEnterTransition(motionScale),
-        exitTransition = aeonExitTransition(motionScale),
-        popEnterTransition = aeonPopEnterTransition(motionScale),
-        popExitTransition = aeonPopExitTransition(motionScale),
-        sizeTransform = {
-            aeonSizeTransform(motionScale)
-        }
+        enterTransition = enterTransition,
+        exitTransition = exitTransition,
+        popEnterTransition = popEnterTransition,
+        popExitTransition = popExitTransition,
+        sizeTransform = null
     ) {
         aeonTopLevelRoutes(
             navigationState = navigationState,
@@ -124,7 +128,10 @@ private fun NavGraphBuilder.aeonTopLevelRoutes(
     }
 
     composable(FocusDestination.route) {
-        FocusRoute(onFocusTopBarConfigChanged)
+        FocusRoute(
+            navigationState = navigationState,
+            onFocusTopBarConfigChanged = onFocusTopBarConfigChanged
+        )
     }
 
     composable(InsightsDestination.route) {
@@ -426,6 +433,16 @@ private fun NavGraphBuilder.aeonDetailRoutes(
             subtitle = "Review your deep-work session and interruption pattern.",
             id = entry.stringArg(AeonNavArgs.FOCUS_SESSION_ID),
             navigationState = navigationState
+        )
+    }
+
+    composable(
+        route = FocusRoutineRecordsDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.MONTH))
+    ) { entry ->
+        AeonFocusRoutineRecordsRoute(
+            monthKey = entry.stringArg(AeonNavArgs.MONTH),
+            onBack = navigationState::navigateBack
         )
     }
 
@@ -756,9 +773,13 @@ private fun TrackRoute(
 
 @Composable
 private fun FocusRoute(
+    navigationState: AeonNavigationState,
     onFocusTopBarConfigChanged: (FocusTopBarConfig) -> Unit
 ) {
     AeonFocusRoute(
+        onOpenRoutineRecords = { month ->
+            navigationState.navigateToFocusRoutineRecords(month.toString())
+        },
         onTopBarConfigChanged = onFocusTopBarConfigChanged
     )
 }

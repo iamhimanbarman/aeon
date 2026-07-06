@@ -180,12 +180,12 @@ class AuthRepository(
         _sessionState.value = AuthSessionState.SignedOut
     }
 
-    suspend fun getGmailAuthUrl(): String {
+    suspend fun getGoogleAuthUrl(): String {
         ensureConfigured()
         refreshProviderStatus()
 
         if (!_providerStatus.value.gmailEnabled) {
-            throw AuthException("Gmail sign-up is not configured yet. Add Google OAuth credentials on the backend.")
+            throw AuthException("Google sign-in is unavailable right now.")
         }
 
         return api.getGoogleStartUrl(mobileRedirectUri)
@@ -377,7 +377,7 @@ private class AuthApiClient(
         )
 
         return response.optString("url").takeIf(String::isNotBlank)
-            ?: throw AuthException("Gmail sign-up is not available right now.")
+            ?: throw AuthException("Google sign-in is unavailable right now.")
     }
 
     fun exchangeGoogleCode(exchangeCode: String): AuthSession {

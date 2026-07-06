@@ -1,9 +1,6 @@
 package com.aeon.app.ui.navigation
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -52,7 +51,6 @@ import com.aeon.app.ui.theme.AeonDuration
 import com.aeon.app.ui.theme.AeonEasing
 import com.aeon.app.ui.theme.AeonMotionAlpha
 import com.aeon.app.ui.theme.AeonSpacing
-import com.aeon.app.ui.theme.AeonSpring
 import com.aeon.app.ui.theme.AeonTextStyles
 import com.aeon.app.ui.theme.AeonThemeTokens
 
@@ -125,26 +123,19 @@ fun AeonBottomNavigation(
         AeonBottomNavigationStyle.Minimal -> AeonSpacing.Small
     }
 
-    val containerColor by animateColorAsState(
-        targetValue = when (style) {
-            AeonBottomNavigationStyle.Floating -> colors.surfaceElevated.copy(
-                alpha = if (colors.isDark) 0.94f else 0.98f
-            )
+    val containerColor = when (style) {
+        AeonBottomNavigationStyle.Floating -> colors.surfaceElevated.copy(
+            alpha = if (colors.isDark) 0.94f else 0.98f
+        )
 
-            AeonBottomNavigationStyle.Attached -> colors.surface.copy(
-                alpha = if (colors.isDark) 0.98f else 1f
-            )
+        AeonBottomNavigationStyle.Attached -> colors.surface.copy(
+            alpha = if (colors.isDark) 0.98f else 1f
+        )
 
-            AeonBottomNavigationStyle.Minimal -> colors.surface.copy(
-                alpha = if (colors.isDark) 0.86f else 0.96f
-            )
-        },
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Standard
-        ),
-        label = "aeon_bottom_nav_container_color"
-    )
+        AeonBottomNavigationStyle.Minimal -> colors.surface.copy(
+            alpha = if (colors.isDark) 0.86f else 0.96f
+        )
+    }
 
     Box(
         modifier = modifier
@@ -237,39 +228,19 @@ private fun AeonBottomNavigationItem(
     val accentColor = aeonBottomNavigationAccentColor(destination.accent)
     val selectionColor = aeonBottomNavigationSelectionColor()
     val interactionSource = remember { MutableInteractionSource() }
+    val hapticFeedback = LocalHapticFeedback.current
 
-    val itemAlpha by animateFloatAsState(
-        targetValue = if (enabled) 1f else AeonMotionAlpha.Disabled,
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Standard
-        ),
-        label = "aeon_bottom_nav_item_alpha"
-    )
+    val itemAlpha = if (enabled) 1f else AeonMotionAlpha.Disabled
 
-    val iconColor by animateColorAsState(
-        targetValue = when {
-            selected -> selectionColor
-            else -> colors.textTertiary
-        },
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Standard
-        ),
-        label = "aeon_bottom_nav_item_icon_color"
-    )
+    val iconColor = when {
+        selected -> selectionColor
+        else -> colors.textTertiary
+    }
 
-    val labelColor by animateColorAsState(
-        targetValue = when {
-            selected -> colors.textPrimary
-            else -> colors.textTertiary
-        },
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Standard
-        ),
-        label = "aeon_bottom_nav_item_label_color"
-    )
+    val labelColor = when {
+        selected -> colors.textPrimary
+        else -> colors.textTertiary
+    }
 
     Box(
         modifier = modifier
@@ -287,9 +258,8 @@ private fun AeonBottomNavigationItem(
                 indication = null,
                 role = Role.Tab
             ) {
-                if (!enableHaptics) {
-                    onClick()
-                    return@clickable
+                if (enableHaptics) {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
                 onClick()
             },
@@ -339,27 +309,13 @@ private fun AeonBottomNavigationSymbol(
     val colors = AeonThemeTokens.colors
     val icon = destination.iconForSelection(selected)
 
-    val capsuleWidth by animateDpAsState(
-        targetValue = if (selected) token.selectedIndicatorSize + 14.dp else token.selectedIndicatorSize,
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Standard
-        ),
-        label = "aeon_bottom_nav_symbol_capsule_width"
-    )
+    val capsuleWidth = if (selected) token.selectedIndicatorSize + 14.dp else token.selectedIndicatorSize
 
-    val selectedSurfaceColor by animateColorAsState(
-        targetValue = if (selected) {
+    val selectedSurfaceColor = if (selected) {
             selectionColor.copy(alpha = if (colors.isDark) 0.24f else 0.18f)
         } else {
             Color.Transparent
-        },
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Standard
-        ),
-        label = "aeon_bottom_nav_symbol_surface_color"
-    )
+    }
 
     Box(
         modifier = Modifier
@@ -408,27 +364,13 @@ private fun AeonBottomNavigationLabel(
     enabled: Boolean,
     color: Color
 ) {
-    val labelAlpha by animateFloatAsState(
-        targetValue = when {
-            !enabled -> AeonMotionAlpha.Disabled
-            selected -> 1f
-            else -> 0.82f
-        },
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Standard
-        ),
-        label = "aeon_bottom_nav_label_alpha"
-    )
+    val labelAlpha = when {
+        !enabled -> AeonMotionAlpha.Disabled
+        selected -> 1f
+        else -> 0.82f
+    }
 
-    val labelOffsetY by animateDpAsState(
-        targetValue = if (selected) 0.dp else 1.dp,
-        animationSpec = tween(
-            durationMillis = AeonDuration.Normal,
-            easing = AeonEasing.Decelerate
-        ),
-        label = "aeon_bottom_nav_label_offset"
-    )
+    val labelOffsetY = if (selected) 0.dp else 1.dp
 
     Text(
         text = text,
@@ -472,7 +414,10 @@ private fun AeonBottomNavigationBadge(
             )
         ) + scaleIn(
             initialScale = 0.72f,
-            animationSpec = AeonSpring.snappy()
+            animationSpec = tween(
+                durationMillis = AeonDuration.Fast,
+                easing = AeonEasing.Decelerate
+            )
         ),
         exit = fadeOut(
             animationSpec = tween(
@@ -481,7 +426,10 @@ private fun AeonBottomNavigationBadge(
             )
         ) + scaleOut(
             targetScale = 0.72f,
-            animationSpec = AeonSpring.snappy()
+            animationSpec = tween(
+                durationMillis = AeonDuration.UltraFast,
+                easing = AeonEasing.Accelerate
+            )
         ),
         modifier = modifier
     ) {

@@ -348,6 +348,7 @@ data class FocusViewState(
     val todayMinutes: Int = 0,
     val occurrences: List<FocusRoutineOccurrenceEntity> = emptyList(),
     val weeklyOccurrences: List<FocusRoutineOccurrenceEntity> = emptyList(),
+    val monthlyOccurrences: List<FocusRoutineOccurrenceEntity> = emptyList(),
     val templates: List<FocusRoutineTemplateEntity> = emptyList(),
     val routineItems: List<FocusRoutineItemEntity> = emptyList(),
     val availableTasks: List<TaskEntity> = emptyList(),
@@ -357,6 +358,7 @@ data class FocusViewState(
 private data class FocusRoutineBundle(
     val occurrences: List<FocusRoutineOccurrenceEntity>,
     val weeklyOccurrences: List<FocusRoutineOccurrenceEntity>,
+    val monthlyOccurrences: List<FocusRoutineOccurrenceEntity>,
     val templates: List<FocusRoutineTemplateEntity>,
     val items: List<FocusRoutineItemEntity>,
     val tasks: List<TaskEntity>
@@ -392,14 +394,34 @@ class AeonFocusViewModel(
             val weekFlow = focusDate.flatMapLatest { date ->
                 repositories.focusRoutines.observeWeek(date.minusDays(6), date)
             }
-            val routinesFlow = combine(
+            val monthFlow = focusDate.flatMapLatest { date ->
+                val month = YearMonth.from(date)
+                repositories.focusRoutines.observeRange(
+                    start = month.atDay(1),
+                    end = month.atEndOfMonth()
+                )
+            }
+            val routinesCoreFlow = combine(
                 todayFlow,
                 weekFlow,
+                monthFlow,
                 repositories.focusRoutines.observeTemplates(),
-                repositories.focusRoutines.observeActiveItems(),
+                repositories.focusRoutines.observeActiveItems()
+            ) { occurrences, weekly, monthly, templates, items ->
+                FocusRoutineBundle(
+                    occurrences = occurrences,
+                    weeklyOccurrences = weekly,
+                    monthlyOccurrences = monthly,
+                    templates = templates,
+                    items = items,
+                    tasks = emptyList()
+                )
+            }
+            val routinesFlow = combine(
+                routinesCoreFlow,
                 repositories.tasks.observeActiveTasks()
-            ) { occurrences, weekly, templates, items, tasks ->
-                FocusRoutineBundle(occurrences, weekly, templates, items, tasks)
+            ) { bundle, tasks ->
+                bundle.copy(tasks = tasks)
             }
             combine(
                 sessionFlow,
@@ -414,6 +436,7 @@ class AeonFocusViewModel(
                     todayMinutes = todayMinutes,
                     occurrences = routines.occurrences,
                     weeklyOccurrences = routines.weeklyOccurrences,
+                    monthlyOccurrences = routines.monthlyOccurrences,
                     templates = routines.templates,
                     routineItems = routines.items,
                     availableTasks = routines.tasks
@@ -438,9 +461,12 @@ class AeonFocusViewModel(
     }
 
     fun setRoutineDate(date: LocalDate) {
-        val safeDate = date.coerceAtLeast(LocalDate.now())
-        focusDate.value = safeDate
-        launchSafely { useCases.focusRoutines.initialize(safeDate) }
+        focusDate.value = date
+        launchSafely { useCases.focusRoutines.initialize(date) }
+    }
+
+    fun viewRoutineDate(date: LocalDate) {
+        focusDate.value = date
     }
 
     fun addRoutine(draft: FocusRoutineDraft) {
@@ -1592,15 +1618,25 @@ class AeonSettingsViewModel(
 // ----------------------------------------------------
 
 class AeonViewModelFactory(
-    private val useCases: AeonUseCases,
-    private val repositories: AeonRepositories,
-    private val newsRepository: NewsRepository
+    private val useCasesProvider: () -> AeonUseCases,
+    private val repositoriesProvider: () -> AeonRepositories,
+    private val newsRepositoryProvider: () -> NewsRepository
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(
         modelClass: Class<T>
     ): T {
+        val useCases: AeonUseCases by lazy(LazyThreadSafetyMode.NONE) {
+            useCasesProvider()
+        }
+        val repositories: AeonRepositories by lazy(LazyThreadSafetyMode.NONE) {
+            repositoriesProvider()
+        }
+        val newsRepository: NewsRepository by lazy(LazyThreadSafetyMode.NONE) {
+            newsRepositoryProvider()
+        }
+
         return when {
             modelClass.isAssignableFrom(AeonTodayViewModel::class.java) -> {
                 AeonTodayViewModel(useCases)

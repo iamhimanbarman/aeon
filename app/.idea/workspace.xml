@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="NONE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="6ec48a3c-28fb-44bd-bc25-ea6ae5288405" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/AeonApp.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/AeonApp.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/data/repository/FocusRoutineRepository.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/data/repository/FocusRoutineRepository.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/di/AeonAppContainer.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/di/AeonAppContainer.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/domain/focus/FocusRoutineEngine.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/domain/focus/FocusRoutineEngine.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/presentation/viewmodel/AeonViewModels.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/presentation/viewmodel/AeonViewModels.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AeonBottomNavigation.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AeonBottomNavigation.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AppDestination.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AppDestination.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AppNavGraph.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AppNavGraph.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AppNavigation.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/AppNavigation.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/NavigationTransitions.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/navigation/NavigationTransitions.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/focus/FocusScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/focus/FocusScreen.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/notifications/AeonNotificationViewModel.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/notifications/AeonNotificationViewModel.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/notifications/NotificationInboxScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/notifications/NotificationInboxScreen.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/today/TodayScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/aeon/app/ui/screens/today/TodayScreen.kt" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 4
+}]]></component>
+  <component name="ProjectId" id="3G7kxSesgNmWW0rffBzGk36VV40" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "android.gradle.sync.needed": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "main",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "E:/Apps/tracking/app"
+  }
+}]]></component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="6ec48a3c-28fb-44bd-bc25-ea6ae5288405" name="Changes" comment="" />
+      <created>1783330240863</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1783330240863</updated>
+    </task>
+    <servers />
+  </component>
+</project>

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -28,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,9 +59,12 @@ import com.aeon.app.ui.components.core.AeonCardVariant
 import com.aeon.app.ui.components.core.AeonChip
 import com.aeon.app.ui.components.core.AeonChipSize
 import com.aeon.app.ui.components.core.AeonChipVariant
+import com.aeon.app.ui.components.feedback.AeonEmptyState
+import com.aeon.app.ui.components.feedback.AeonEmptyStateVariant
 import com.aeon.app.ui.components.layout.AeonScreen
 import com.aeon.app.ui.components.layout.AeonScreenConfig
 import com.aeon.app.ui.components.layout.aeonPremiumBackgroundBrush
+import com.aeon.app.ui.theme.AeonComponentShapes
 import com.aeon.app.ui.theme.AeonTextStyles
 import com.aeon.app.ui.theme.AeonThemeTokens
 import kotlinx.coroutines.delay
@@ -204,12 +209,18 @@ fun AeonTodayRoute(
         onTopBarConfigChanged(topBarConfig)
     }
 
-    HomeEmptyScreen(modifier = modifier)
+    HomeEmptyScreen(
+        modifier = modifier,
+        onOpenTrack = onOpenTrack,
+        onAddTask = onAddTask
+    )
 }
 
 @Composable
 private fun HomeEmptyScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenTrack: () -> Unit = {},
+    onAddTask: () -> Unit = {}
 ) {
     AeonScreen(
         modifier = modifier,
@@ -217,7 +228,91 @@ private fun HomeEmptyScreen(
         backgroundBrush = aeonPremiumBackgroundBrush(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
     ) {
-        // Intentionally empty: Home content has been cleared.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            AeonEmptyState(
+                title = "Home is waiting for real signals",
+                message = "Add tasks, focus sessions, habits, mood, health, or finance activity. Aeon will turn that live data into a useful daily control center here.",
+                variant = AeonEmptyStateVariant.Premium,
+                icon = {
+                    HomeEmptyStateIcon()
+                },
+                primaryActionText = "Open track",
+                onPrimaryAction = onOpenTrack,
+                secondaryActionText = "Add task",
+                onSecondaryAction = onAddTask
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeEmptyStateIcon() {
+    val colors = AeonThemeTokens.colors
+
+    Box(
+        modifier = Modifier.size(88.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(AeonComponentShapes.IconButtonCircle)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            colors.premiumGold.copy(alpha = 0.24f),
+                            colors.brand.copy(alpha = 0.16f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        Surface(
+            modifier = Modifier.size(62.dp),
+            shape = AeonComponentShapes.IconButtonCircle,
+            color = colors.surfaceElevated.copy(alpha = 0.94f),
+            border = androidx.compose.foundation.BorderStroke(
+                width = 1.dp,
+                color = colors.premiumGold.copy(alpha = 0.22f)
+            ),
+            tonalElevation = 2.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Insights,
+                    contentDescription = null,
+                    tint = colors.premiumGold,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(18.dp),
+            shape = AeonComponentShapes.IconButtonCircle,
+            color = colors.brand.copy(alpha = 0.18f),
+            border = androidx.compose.foundation.BorderStroke(
+                width = 1.dp,
+                color = colors.brand.copy(alpha = 0.22f)
+            )
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Schedule,
+                    contentDescription = null,
+                    tint = colors.brand,
+                    modifier = Modifier.size(10.dp)
+                )
+            }
+        }
     }
 }
 

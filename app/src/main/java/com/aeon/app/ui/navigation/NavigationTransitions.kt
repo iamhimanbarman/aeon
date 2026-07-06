@@ -21,7 +21,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavBackStackEntry
 import com.aeon.app.ui.theme.AeonDuration
 import com.aeon.app.ui.theme.AeonEasing
-import com.aeon.app.ui.theme.AeonSpring
 
 /*
  * AEON ULTRA-PREMIUM NAVIGATION MOTION SYSTEM
@@ -303,14 +302,7 @@ fun aeonPopExitTransition(
 fun aeonSizeTransform(
     motionScale: AeonMotionScale = AeonMotionScale.Normal
 ): SizeTransform? {
-    if (!motionScale.enabled) return null
-
-    return SizeTransform(
-        clip = false,
-        sizeAnimationSpec = { _, _ ->
-            AeonSpring.standard()
-        }
-    )
+    return null
 }
 
 private data class AeonResolvedMotion(
@@ -458,16 +450,24 @@ private fun aeonTopLevelEnterTransition(
 
     return slideInHorizontally(
         initialOffsetX = { width -> direction * width / distanceDivisor },
-        animationSpec = AeonSpring.standard()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     ) + fadeIn(
         animationSpec = aeonTween(
-            baseDurationMillis = AeonDuration.Normal,
+            baseDurationMillis = AeonDuration.Fast,
             motionScale = motionScale,
             easing = AeonEasing.Decelerate
         )
     ) + scaleIn(
         initialScale = 0.988f,
-        animationSpec = AeonSpring.standard()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     )
 }
 
@@ -484,16 +484,24 @@ private fun aeonTopLevelExitTransition(
 
     return slideOutHorizontally(
         targetOffsetX = { width -> -direction * width / distanceDivisor },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     ) + fadeOut(
         animationSpec = aeonTween(
-            baseDurationMillis = AeonDuration.Fast,
+            baseDurationMillis = AeonDuration.UltraFast,
             motionScale = motionScale,
             easing = AeonEasing.Accelerate
         )
     ) + scaleOut(
         targetScale = 0.992f,
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     )
 }
 
@@ -503,10 +511,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonForwardEnterTr
 ): EnterTransition {
     return slideIntoContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Left,
-        animationSpec = AeonSpring.standard()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     ) + fadeIn(
         animationSpec = aeonTween(
-            baseDurationMillis = AeonDuration.Normal,
+            baseDurationMillis = AeonDuration.Fast,
             motionScale = motionScale,
             easing = AeonEasing.Decelerate
         )
@@ -516,7 +528,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonForwardEnterTr
             AeonMotionIntensity.Standard -> 0.992f
             AeonMotionIntensity.Expressive -> 0.988f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     )
 }
 
@@ -526,10 +542,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonForwardExitTra
 ): ExitTransition {
     return slideOutOfContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Left,
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     ) + fadeOut(
         animationSpec = aeonTween(
-            baseDurationMillis = AeonDuration.Fast,
+            baseDurationMillis = AeonDuration.UltraFast,
             motionScale = motionScale,
             easing = AeonEasing.Accelerate
         )
@@ -539,7 +559,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonForwardExitTra
             AeonMotionIntensity.Standard -> 0.996f
             AeonMotionIntensity.Expressive -> 0.992f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     )
 }
 
@@ -549,10 +573,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonPopEnterFromDe
 ): EnterTransition {
     return slideIntoContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Right,
-        animationSpec = AeonSpring.standard()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     ) + fadeIn(
         animationSpec = aeonTween(
-            baseDurationMillis = AeonDuration.Normal,
+            baseDurationMillis = AeonDuration.Fast,
             motionScale = motionScale,
             easing = AeonEasing.Decelerate
         )
@@ -562,7 +590,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonPopEnterFromDe
             AeonMotionIntensity.Standard -> 0.992f
             AeonMotionIntensity.Expressive -> 0.988f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     )
 }
 
@@ -572,10 +604,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonPopExitFromDet
 ): ExitTransition {
     return slideOutOfContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Right,
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     ) + fadeOut(
         animationSpec = aeonTween(
-            baseDurationMillis = AeonDuration.Fast,
+            baseDurationMillis = AeonDuration.UltraFast,
             motionScale = motionScale,
             easing = AeonEasing.Accelerate
         )
@@ -585,7 +621,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonPopExitFromDet
             AeonMotionIntensity.Standard -> 0.996f
             AeonMotionIntensity.Expressive -> 0.992f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     )
 }
 
@@ -595,10 +635,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonModalEnterTran
 ): EnterTransition {
     return slideIntoContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Up,
-        animationSpec = AeonSpring.standard()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     ) + fadeIn(
         animationSpec = aeonTween(
-            baseDurationMillis = AeonDuration.Normal,
+            baseDurationMillis = AeonDuration.Fast,
             motionScale = motionScale,
             easing = AeonEasing.Decelerate
         )
@@ -608,7 +652,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonModalEnterTran
             AeonMotionIntensity.Standard -> 0.988f
             AeonMotionIntensity.Expressive -> 0.984f
         },
-        animationSpec = AeonSpring.standard()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     )
 }
 
@@ -628,7 +676,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonModalExitTrans
             AeonMotionIntensity.Standard -> 0.992f
             AeonMotionIntensity.Expressive -> 0.988f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     )
 }
 
@@ -648,7 +700,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonModalPopEnterT
             AeonMotionIntensity.Standard -> 0.996f
             AeonMotionIntensity.Expressive -> 0.992f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     )
 }
 
@@ -658,10 +714,14 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonModalPopExitTr
 ): ExitTransition {
     return slideOutOfContainer(
         towards = AnimatedContentTransitionScope.SlideDirection.Down,
-        animationSpec = AeonSpring.standard()
-    ) + fadeOut(
         animationSpec = aeonTween(
             baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
+    ) + fadeOut(
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
             motionScale = motionScale,
             easing = AeonEasing.Accelerate
         )
@@ -671,7 +731,11 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.aeonModalPopExitTr
             AeonMotionIntensity.Standard -> 0.992f
             AeonMotionIntensity.Expressive -> 0.988f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     )
 }
 
@@ -691,7 +755,11 @@ private fun aeonFadeEnterTransition(
             AeonMotionIntensity.Standard -> 0.995f
             AeonMotionIntensity.Expressive -> 0.992f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.Fast,
+            motionScale = motionScale,
+            easing = AeonEasing.Decelerate
+        )
     )
 }
 
@@ -711,7 +779,11 @@ private fun aeonFadeExitTransition(
             AeonMotionIntensity.Standard -> 0.995f
             AeonMotionIntensity.Expressive -> 0.992f
         },
-        animationSpec = AeonSpring.soft()
+        animationSpec = aeonTween(
+            baseDurationMillis = AeonDuration.UltraFast,
+            motionScale = motionScale,
+            easing = AeonEasing.Accelerate
+        )
     )
 }
 
@@ -772,6 +844,7 @@ private object AeonNavigationMotionRegistry {
         GoalDetailDestination.baseRoute,
         InsightDetailDestination.baseRoute,
         FocusSessionDetailDestination.baseRoute,
+        FocusRoutineRecordsDestination.baseRoute,
         JournalEntryDetailDestination.baseRoute,
         MoodEntryDetailDestination.baseRoute,
         HealthEntryDestination.baseRoute,
@@ -913,11 +986,11 @@ private fun String?.normalizedRoute(): String {
         .orEmpty()
 }
 
-private fun aeonTween(
+private fun <T> aeonTween(
     baseDurationMillis: Int,
     motionScale: AeonMotionScale,
     easing: Easing
-): FiniteAnimationSpec<Float> {
+): FiniteAnimationSpec<T> {
     val duration = (baseDurationMillis * motionScale.scale)
         .toInt()
         .coerceAtLeast(1)

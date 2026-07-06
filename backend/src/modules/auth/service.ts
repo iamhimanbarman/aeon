@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import type { Sql } from "postgres";
-import { env } from "../../config/env.js";
+import { authAllowedMobileRedirectUris, env } from "../../config/env.js";
 import { badRequest, conflict, unauthorized } from "../../lib/errors.js";
 import {
   createAuthSession,
@@ -311,8 +311,10 @@ export async function buildGoogleStartUrl(
   mobileRedirectUri: string
 ): Promise<{ url: string }> {
   if (!getAuthProviderStatus().gmail.enabled) {
-    throw badRequest("Gmail sign-up is not configured on the backend yet.");
+    throw badRequest("Google sign-in is unavailable right now.");
   }
+
+  assertAllowedMobileRedirectUri(mobileRedirectUri);
 
   const state = randomBytes(32).toString("base64url");
   const stateHash = hashOpaqueToken(state);
@@ -348,13 +350,13 @@ export async function completeGoogleCallback(
   }
 ): Promise<{ redirectUrl: string }> {
   if (!getAuthProviderStatus().gmail.enabled) {
-    throw badRequest("Gmail sign-up is not configured on the backend yet.");
+    throw badRequest("Google sign-in is unavailable right now.");
   }
 
   const state = await findOAuthState(db, hashOpaqueToken(input.state));
 
   if (state == null || state.consumed_at != null || new Date(state.expires_at).getTime() <= Date.now()) {
-    throw badRequest("The Gmail sign-in session is invalid or expired.");
+    throw badRequest("The Google sign-in session is invalid or expired.");
   }
 
   await consumeOAuthState(db, state.id);
@@ -450,14 +452,14 @@ export async function exchangeGoogleCodeForSession(
   const exchange = await findOAuthExchangeCode(db, hashOpaqueToken(exchangeCode));
 
   if (exchange == null || exchange.consumed_at != null || new Date(exchange.expires_at).getTime() <= Date.now()) {
-    throw unauthorized("The Gmail sign-in session is invalid or expired.");
+    throw unauthorized("The Google sign-in session is invalid or expired.");
   }
 
   await consumeOAuthExchangeCode(db, exchange.id);
   const user = await findAuthUserById(db, exchange.user_id);
 
   if (user == null || !user.is_active || user.email_normalized == null) {
-    throw unauthorized("The Gmail sign-in session is invalid or expired.");
+    throw unauthorized("The Google sign-in session is invalid or expired.");
   }
 
   return issueSession(
@@ -560,6 +562,12 @@ function constantTimeMatch(left: string, right: string): boolean {
 
 function buildCallbackErrorUrl(mobileRedirectUri: string, errorCode: string): string {
   return `${mobileRedirectUri}?error=${encodeURIComponent(errorCode)}`;
+}
+
+function assertAllowedMobileRedirectUri(mobileRedirectUri: string): void {
+  if (!authAllowedMobileRedirectUris.includes(mobileRedirectUri)) {
+    throw badRequest("Unsupported mobile redirect URI.");
+  }
 }
 
 async function deriveScryptKey(

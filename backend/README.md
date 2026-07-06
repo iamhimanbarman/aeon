@@ -66,6 +66,7 @@ Optional compatibility / provider variables:
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REDIRECT_URI`
+- `AUTH_ALLOWED_MOBILE_REDIRECT_URIS`
 
 ## Auth Notes
 
@@ -74,6 +75,22 @@ Optional compatibility / provider variables:
 - Refresh tokens are opaque, hashed before storage, and rotated on refresh.
 - Signup OTP emails are sent through Resend.
 - The backend still accepts Supabase JWTs when `SUPABASE_URL` is configured, so existing external auth can coexist during migration.
+
+## Google OAuth For Android
+
+Current production callback values for this project:
+
+- Google OAuth redirect URI: `https://aeon-9cds.onrender.com/v1/auth/google/callback`
+- Mobile app deep link URI: `aeon://auth/callback`
+- Render env `AUTH_ALLOWED_MOBILE_REDIRECT_URIS`: `aeon://auth/callback`
+
+Production notes:
+
+- keep `GOOGLE_OAUTH_CLIENT_SECRET` only in Render environment variables
+- do not commit Google secrets into the repo, screenshots, or `.env.example`
+- set `CORS_ORIGIN` explicitly in production; wildcard `*` is blocked now
+- if your Google OAuth app is still in testing mode, only listed test users can sign in
+- publish the OAuth consent screen before treating Google sign-in as public production auth
 
 ## Local Development
 

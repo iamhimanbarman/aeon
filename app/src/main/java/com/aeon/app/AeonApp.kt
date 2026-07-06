@@ -7,8 +7,15 @@ import com.aeon.app.core.notifications.AeonNotificationFeatureActionDelegate
 import com.aeon.app.core.notifications.AeonNotificationStartupPolicy
 import com.aeon.app.di.AeonAppContainer
 import com.aeon.app.di.DefaultAeonAppContainer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class AeonApp : Application() {
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     lateinit var container: AeonAppContainer
         private set
@@ -17,6 +24,12 @@ class AeonApp : Application() {
         super.onCreate()
 
         container = DefaultAeonAppContainer(this)
+
+        appScope.launch {
+            runCatching {
+                container.warmUpNavigationDependencies()
+            }
+        }
 
         AeonNotificationActionHandler.setFeatureActionDelegate(
             object : AeonNotificationFeatureActionDelegate {
@@ -65,5 +78,10 @@ class AeonApp : Application() {
                 rescheduleOnForegroundWhenNeeded = false
             )
         )
+    }
+
+    override fun onTerminate() {
+        appScope.cancel()
+        super.onTerminate()
     }
 }

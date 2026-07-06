@@ -2,10 +2,6 @@ package com.aeon.app.ui.screens.auth
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -40,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -74,10 +71,12 @@ import com.aeon.app.data.auth.AuthException
 import com.aeon.app.data.auth.AuthRepository
 import com.aeon.app.data.auth.AuthSessionState
 import com.aeon.app.data.auth.VerifyOtpResult
-import com.aeon.app.ui.components.core.AeonCard
-import com.aeon.app.ui.components.core.AeonCardVariant
 import com.aeon.app.ui.components.core.AeonTextField
 import com.aeon.app.ui.components.core.AeonTextFieldVariant
+import com.aeon.app.ui.components.feedback.AeonToastDuration
+import com.aeon.app.ui.components.feedback.AeonToastHost
+import com.aeon.app.ui.components.feedback.AeonToastProvider
+import com.aeon.app.ui.components.feedback.rememberAeonToastHostState
 import com.aeon.app.ui.theme.AeonGradientFinanceEnd
 import com.aeon.app.ui.theme.AeonGradientFinanceStart
 import com.aeon.app.ui.theme.AeonPremiumGold
@@ -100,10 +99,12 @@ fun AeonAuthFlow(
     authRepository: AuthRepository
 ) {
     val sessionState by authRepository.sessionState.collectAsState()
+    val providerStatus by authRepository.providerStatus.collectAsState()
     val colors = AeonThemeTokens.colors
     val scrollState = rememberScrollState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+    val toastHostState = rememberAeonToastHostState()
 
     var currentStep by rememberSaveable { mutableStateOf(AuthStep.Welcome.name) }
     var firstName by rememberSaveable { mutableStateOf("") }
@@ -114,13 +115,16 @@ fun AeonAuthFlow(
     var otpCode by rememberSaveable { mutableStateOf("") }
     var signupToken by rememberSaveable { mutableStateOf("") }
     var isSubmitting by rememberSaveable { mutableStateOf(false) }
-    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var infoMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var resendAvailableAtMillis by rememberSaveable { mutableLongStateOf(0L) }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
     var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
 
     val step = remember(currentStep) { AuthStep.valueOf(currentStep) }
+
+    LaunchedEffect(authRepository) {
+        runCatching { authRepository.refreshProviderStatus() }
+    }
+
     val resendCountdown by produceState(initialValue = 0, resendAvailableAtMillis) {
         if (resendAvailableAtMillis <= 0L) {
             value = 0
@@ -145,440 +149,454 @@ fun AeonAuthFlow(
     fun submit(block: suspend () -> Unit) {
         scope.launch {
             isSubmitting = true
-            errorMessage = null
 
             try {
                 block()
             } catch (throwable: Throwable) {
-                errorMessage = throwable.message ?: "Unable to complete the request right now."
+                toastHostState.showError(
+                    title = throwable.toAuthToastText(),
+                    duration = AeonToastDuration.Normal
+                )
             } finally {
                 isSubmitting = false
             }
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF28170B),
-                        Color(0xFF120C08),
-                        colors.background
+    AeonToastProvider(hostState = toastHostState) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF28170B),
+                            Color(0xFF120C08),
+                            colors.background
+                        )
                     )
                 )
-            )
-    ) {
-        AeonAuthAmbientLayer()
+        ) {
+            AeonAuthAmbientLayer()
 
-        if (step == AuthStep.Welcome) {
-            AeonLandingScreen(
-                onCreateAccount = {
-                    errorMessage = null
-                    infoMessage = null
-                    currentStep = AuthStep.SignUp.name
-                },
-                onExistingAccount = {
-                    errorMessage = null
-                    infoMessage = null
-                    currentStep = AuthStep.SignIn.name
-                },
-                onSkip = {
-                    errorMessage = null
-                    infoMessage = null
-                    authRepository.continueAsGuest()
-                }
-            )
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .systemBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                AeonAuthTopRow(
-                    actionLabel = when (step) {
-                        AuthStep.SignUp -> "Sign in"
-                        AuthStep.SignIn -> "Sign up"
-                        AuthStep.VerifyOtp -> "Change email"
-                        AuthStep.SetPassword -> "Sign in"
-                        AuthStep.Welcome -> ""
+            if (step == AuthStep.Welcome) {
+                AeonLandingScreen(
+                    onCreateAccount = {
+                        toastHostState.dismissCurrent()
+                        currentStep = AuthStep.SignUp.name
                     },
-                    onActionClick = {
-                        errorMessage = null
-                        infoMessage = null
-                        currentStep = when (step) {
-                            AuthStep.SignUp -> AuthStep.SignIn.name
-                            AuthStep.SignIn -> AuthStep.SignUp.name
-                            AuthStep.VerifyOtp -> AuthStep.SignUp.name
-                            AuthStep.SetPassword -> AuthStep.SignIn.name
-                            AuthStep.Welcome -> currentStep
-                        }
+                    onExistingAccount = {
+                        toastHostState.dismissCurrent()
+                        currentStep = AuthStep.SignIn.name
+                    },
+                    onSkip = {
+                        toastHostState.dismissCurrent()
+                        authRepository.continueAsGuest()
                     }
                 )
-
-                Spacer(modifier = Modifier.height(26.dp))
-
-                AeonAuthHero(
-                    title = when (step) {
-                        AuthStep.SignUp -> "Sign up in Aeon"
-                        AuthStep.SignIn -> "Sign in to Aeon"
-                        AuthStep.VerifyOtp -> "Verify your email"
-                        AuthStep.SetPassword -> "Set your password"
-                        AuthStep.Welcome -> ""
-                    },
-                    body = when (step) {
-                        AuthStep.VerifyOtp -> "Enter the 6-digit code sent to $email."
-                        AuthStep.SetPassword -> "Your account is almost ready. Add a strong password to protect it."
-                        else -> null
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(22.dp))
-
-                AnimatedVisibility(
-                    visible = !infoMessage.isNullOrBlank() || !errorMessage.isNullOrBlank(),
-                    enter = fadeIn(tween(220)),
-                    exit = fadeOut(tween(160))
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                        .systemBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    AeonCard(
-                        variant = AeonCardVariant.Glass,
-                        borderColor = if (errorMessage != null) {
-                            colors.error.copy(alpha = 0.36f)
-                        } else {
-                            AeonPremiumGold.copy(alpha = 0.28f)
-                        }
-                    ) {
-                        Text(
-                            text = errorMessage ?: infoMessage.orEmpty(),
-                            style = AeonTextStyles.EmptyStateBody,
-                            color = if (errorMessage != null) colors.error else colors.textSecondary
-                        )
-                    }
-                }
-
-                if (!infoMessage.isNullOrBlank() || !errorMessage.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(18.dp))
-                }
-
-                when (step) {
-                    AuthStep.SignUp -> {
-                        AeonAuthFormCard {
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                AeonTextField(
-                                    value = firstName,
-                                    onValueChange = { firstName = it },
-                                    modifier = Modifier.weight(1f),
-                                    label = "First name",
-                                    placeholder = "First name",
-                                    variant = AeonTextFieldVariant.Glass,
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
-                                )
-
-                                AeonTextField(
-                                    value = lastName,
-                                    onValueChange = { lastName = it },
-                                    modifier = Modifier.weight(1f),
-                                    label = "Last name",
-                                    placeholder = "Last name",
-                                    variant = AeonTextFieldVariant.Glass,
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
-                                )
+                    AeonAuthTopRow(
+                        actionLabel = when (step) {
+                            AuthStep.SignUp -> "Sign in"
+                            AuthStep.SignIn -> "Sign up"
+                            AuthStep.VerifyOtp -> "Change email"
+                            AuthStep.SetPassword -> "Sign in"
+                            AuthStep.Welcome -> ""
+                        },
+                        onActionClick = {
+                            toastHostState.dismissCurrent()
+                            currentStep = when (step) {
+                                AuthStep.SignUp -> AuthStep.SignIn.name
+                                AuthStep.SignIn -> AuthStep.SignUp.name
+                                AuthStep.VerifyOtp -> AuthStep.SignUp.name
+                                AuthStep.SetPassword -> AuthStep.SignIn.name
+                                AuthStep.Welcome -> currentStep
                             }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            AeonTextField(
-                                value = email,
-                                onValueChange = { email = it },
-                                label = "Email",
-                                placeholder = "Enter your email",
-                                variant = AeonTextFieldVariant.Glass,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Email,
-                                    imeAction = ImeAction.Done
-                                )
-                            )
-
-                            Spacer(modifier = Modifier.height(18.dp))
-
-                            AeonAuthPrimaryButton(
-                                text = "Continue",
-                                onClick = {
-                                    submit {
-                                        if (firstName.isBlank()) throw AuthException("First name is required.")
-                                        if (email.isBlank()) throw AuthException("Email is required.")
-                                        val result = authRepository.requestSignupOtp(email)
-                                        otpCode = ""
-                                        resendAvailableAtMillis =
-                                            System.currentTimeMillis() + result.resendAfterSeconds * 1_000L
-                                        currentStep = AuthStep.VerifyOtp.name
-                                        infoMessage = "A verification code has been sent to $email."
-                                    }
-                                },
-                                loading = isSubmitting
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            AeonGoogleButton(
-                                onClick = {
-                                    submit {
-                                        val url = authRepository.getGmailAuthUrl()
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        infoMessage = "Complete the Gmail verification in your browser."
-                                    }
-                                }
-                            )
                         }
-                    }
+                    )
 
-                    AuthStep.SignIn -> {
-                        AeonAuthFormCard {
-                            AeonTextField(
-                                value = email,
-                                onValueChange = { email = it },
-                                label = "Email address",
-                                placeholder = "Enter your email",
-                                variant = AeonTextFieldVariant.Glass,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Email,
-                                    imeAction = ImeAction.Next
-                                )
-                            )
+                    Spacer(modifier = Modifier.height(26.dp))
 
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            AeonTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = "Password",
-                                placeholder = "Enter your password",
-                                variant = AeonTextFieldVariant.Glass,
-                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = ImeAction.Done
-                                ),
-                                trailingIcon = {
-                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                        Icon(
-                                            imageVector = if (passwordVisible) {
-                                                Icons.Outlined.VisibilityOff
-                                            } else {
-                                                Icons.Outlined.Visibility
-                                            },
-                                            contentDescription = null
-                                        )
-                                    }
-                                }
-                            )
-
-                            Spacer(modifier = Modifier.height(18.dp))
-
-                            AeonAuthPrimaryButton(
-                                text = "Login",
-                                onClick = {
-                                    submit {
-                                        if (email.isBlank() || password.isBlank()) {
-                                            throw AuthException("Email and password are required.")
-                                        }
-
-                                        authRepository.signIn(email, password)
-                                    }
-                                },
-                                loading = isSubmitting
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            AeonGoogleButton(
-                                onClick = {
-                                    submit {
-                                        val url = authRepository.getGmailAuthUrl()
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        infoMessage = "Complete the Gmail verification in your browser."
-                                    }
-                                }
-                            )
+                    AeonAuthHero(
+                        title = when (step) {
+                            AuthStep.SignUp -> "Sign up in Aeon"
+                            AuthStep.SignIn -> "Sign in to Aeon"
+                            AuthStep.VerifyOtp -> "Verify your email"
+                            AuthStep.SetPassword -> "Set your password"
+                            AuthStep.Welcome -> ""
+                        },
+                        body = when (step) {
+                            AuthStep.VerifyOtp -> "Enter the 6-digit code sent to $email."
+                            AuthStep.SetPassword -> "Your account is almost ready. Add a strong password to protect it."
+                            else -> null
                         }
-                    }
+                    )
 
-                    AuthStep.VerifyOtp -> {
-                        AeonAuthFormCard {
-                            AeonOtpField(
-                                value = otpCode,
-                                onValueChange = { otpCode = it }
-                            )
+                    Spacer(modifier = Modifier.height(22.dp))
 
-                            Spacer(modifier = Modifier.height(18.dp))
+                    when (step) {
+                        AuthStep.SignUp -> {
+                            AeonAuthFormCard {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    AeonTextField(
+                                        value = firstName,
+                                        onValueChange = { firstName = it },
+                                        modifier = Modifier.weight(1f),
+                                        label = "First name",
+                                        placeholder = "First name",
+                                        variant = AeonTextFieldVariant.Glass,
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                                    )
 
-                            AeonAuthPrimaryButton(
-                                text = "Verify code",
-                                onClick = {
-                                    submit {
-                                        if (otpCode.length != 6) {
-                                            throw AuthException("Enter the full 6-digit code.")
-                                        }
+                                    AeonTextField(
+                                        value = lastName,
+                                        onValueChange = { lastName = it },
+                                        modifier = Modifier.weight(1f),
+                                        label = "Last name",
+                                        placeholder = "Last name",
+                                        variant = AeonTextFieldVariant.Glass,
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                                    )
+                                }
 
-                                        val result = authRepository.verifySignupOtp(email, otpCode)
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                                        when (result.nextStep) {
-                                            VerifyOtpResult.NextStep.SetPassword -> {
-                                                signupToken = result.signupToken.orEmpty()
-                                                currentStep = AuthStep.SetPassword.name
-                                                infoMessage = null
-                                            }
-
-                                            VerifyOtpResult.NextStep.SignIn -> {
-                                                password = ""
-                                                confirmPassword = ""
-                                                currentStep = AuthStep.SignIn.name
-                                                infoMessage = "This email already has an account. Sign in to continue."
-                                            }
-                                        }
-                                    }
-                                },
-                                loading = isSubmitting
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (resendCountdown > 0) {
-                                        "Resend in ${resendCountdown}s"
-                                    } else {
-                                        "Didn't get the code?"
-                                    },
-                                    style = AeonTextStyles.Caption,
-                                    color = colors.textTertiary
+                                AeonTextField(
+                                    value = email,
+                                    onValueChange = { email = it },
+                                    label = "Email",
+                                    placeholder = "Enter your email",
+                                    variant = AeonTextFieldVariant.Glass,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Email,
+                                        imeAction = ImeAction.Done
+                                    )
                                 )
 
-                                Text(
-                                    text = "Resend OTP",
-                                    style = AeonTextStyles.ButtonMedium,
-                                    color = if (resendCountdown > 0) colors.textDisabled else colors.textPrimary,
-                                    modifier = Modifier.clickable(enabled = resendCountdown == 0 && !isSubmitting) {
+                                Spacer(modifier = Modifier.height(18.dp))
+
+                                AeonAuthPrimaryButton(
+                                    text = "Continue",
+                                    onClick = {
                                         submit {
+                                            if (firstName.isBlank()) throw AuthException("First name is required.")
+                                            if (email.isBlank()) throw AuthException("Email is required.")
                                             val result = authRepository.requestSignupOtp(email)
+                                            otpCode = ""
                                             resendAvailableAtMillis =
                                                 System.currentTimeMillis() + result.resendAfterSeconds * 1_000L
-                                            infoMessage = "A fresh code has been sent to $email."
+                                            currentStep = AuthStep.VerifyOtp.name
+                                            toastHostState.showInfo(
+                                                title = "Verification code sent",
+                                                duration = AeonToastDuration.Normal
+                                            )
+                                        }
+                                    },
+                                    loading = isSubmitting
+                                )
+
+                                if (providerStatus.gmailEnabled) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    AeonGoogleButton(
+                                        onClick = {
+                                            submit {
+                                                val url = authRepository.getGoogleAuthUrl()
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                                toastHostState.showInfo(
+                                                    title = "Continue with Google",
+                                                    duration = AeonToastDuration.Normal
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        AuthStep.SignIn -> {
+                            AeonAuthFormCard {
+                                AeonTextField(
+                                    value = email,
+                                    onValueChange = { email = it },
+                                    label = "Email address",
+                                    placeholder = "Enter your email",
+                                    variant = AeonTextFieldVariant.Glass,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Email,
+                                        imeAction = ImeAction.Next
+                                    )
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                AeonTextField(
+                                    value = password,
+                                    onValueChange = { password = it },
+                                    label = "Password",
+                                    placeholder = "Enter your password",
+                                    variant = AeonTextFieldVariant.Glass,
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Password,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    trailingIcon = {
+                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                            Icon(
+                                                imageVector = if (passwordVisible) {
+                                                    Icons.Outlined.VisibilityOff
+                                                } else {
+                                                    Icons.Outlined.Visibility
+                                                },
+                                                contentDescription = null
+                                            )
                                         }
                                     }
                                 )
+
+                                Spacer(modifier = Modifier.height(18.dp))
+
+                                AeonAuthPrimaryButton(
+                                    text = "Login",
+                                    onClick = {
+                                        submit {
+                                            if (email.isBlank() || password.isBlank()) {
+                                                throw AuthException("Email and password are required.")
+                                            }
+
+                                            authRepository.signIn(email, password)
+                                        }
+                                    },
+                                    loading = isSubmitting
+                                )
+
+                                if (providerStatus.gmailEnabled) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    AeonGoogleButton(
+                                        onClick = {
+                                            submit {
+                                                val url = authRepository.getGoogleAuthUrl()
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                                toastHostState.showInfo(
+                                                    title = "Continue with Google",
+                                                    duration = AeonToastDuration.Normal
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    AuthStep.SetPassword -> {
-                        AeonAuthFormCard {
-                            AeonTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = "Password",
-                                placeholder = "Create a strong password",
-                                helperText = "Use 10+ characters with upper, lower, and a number.",
-                                variant = AeonTextFieldVariant.Glass,
-                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = ImeAction.Next
-                                ),
-                                trailingIcon = {
-                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                        Icon(
-                                            imageVector = if (passwordVisible) {
-                                                Icons.Outlined.VisibilityOff
-                                            } else {
-                                                Icons.Outlined.Visibility
-                                            },
-                                            contentDescription = null
-                                        )
-                                    }
-                                }
-                            )
+                        AuthStep.VerifyOtp -> {
+                            AeonAuthFormCard {
+                                AeonOtpField(
+                                    value = otpCode,
+                                    onValueChange = { otpCode = it }
+                                )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(18.dp))
 
-                            AeonTextField(
-                                value = confirmPassword,
-                                onValueChange = { confirmPassword = it },
-                                label = "Confirm password",
-                                placeholder = "Re-enter your password",
-                                variant = AeonTextFieldVariant.Glass,
-                                visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Password,
-                                    imeAction = ImeAction.Done
-                                ),
-                                trailingIcon = {
-                                    IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
-                                        Icon(
-                                            imageVector = if (confirmPasswordVisible) {
-                                                Icons.Outlined.VisibilityOff
-                                            } else {
-                                                Icons.Outlined.Visibility
-                                            },
-                                            contentDescription = null
-                                        )
-                                    }
-                                }
-                            )
+                                AeonAuthPrimaryButton(
+                                    text = "Verify code",
+                                    onClick = {
+                                        submit {
+                                            if (otpCode.length != 6) {
+                                                throw AuthException("Enter the full 6-digit code.")
+                                            }
 
-                            Spacer(modifier = Modifier.height(18.dp))
+                                            val result = authRepository.verifySignupOtp(email, otpCode)
 
-                            AeonAuthPrimaryButton(
-                                text = "Create account",
-                                onClick = {
-                                    submit {
-                                        if (signupToken.isBlank()) {
-                                            throw AuthException("Your signup session expired. Start again.")
+                                            when (result.nextStep) {
+                                                VerifyOtpResult.NextStep.SetPassword -> {
+                                                    signupToken = result.signupToken.orEmpty()
+                                                    currentStep = AuthStep.SetPassword.name
+                                                }
+
+                                                VerifyOtpResult.NextStep.SignIn -> {
+                                                    password = ""
+                                                    confirmPassword = ""
+                                                    currentStep = AuthStep.SignIn.name
+                                                    toastHostState.showInfo(
+                                                        title = "Account found. Sign in",
+                                                        duration = AeonToastDuration.Normal
+                                                    )
+                                                }
+                                            }
                                         }
+                                    },
+                                    loading = isSubmitting
+                                )
 
-                                        if (password != confirmPassword) {
-                                            throw AuthException("Passwords do not match.")
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (resendCountdown > 0) {
+                                            "Resend in ${resendCountdown}s"
+                                        } else {
+                                            "Didn't get the code?"
+                                        },
+                                        style = AeonTextStyles.Caption,
+                                        color = colors.textTertiary
+                                    )
+
+                                    Text(
+                                        text = "Resend OTP",
+                                        style = AeonTextStyles.ButtonMedium,
+                                        color = if (resendCountdown > 0) colors.textDisabled else colors.textPrimary,
+                                        modifier = Modifier.clickable(enabled = resendCountdown == 0 && !isSubmitting) {
+                                            submit {
+                                                val result = authRepository.requestSignupOtp(email)
+                                                resendAvailableAtMillis =
+                                                    System.currentTimeMillis() + result.resendAfterSeconds * 1_000L
+                                                toastHostState.showInfo(
+                                                    title = "New code sent",
+                                                    duration = AeonToastDuration.Normal
+                                                )
+                                            }
                                         }
-
-                                        authRepository.completeSignup(
-                                            signupToken = signupToken,
-                                            password = password,
-                                            displayName = listOf(firstName.trim(), lastName.trim())
-                                                .filter(String::isNotBlank)
-                                                .joinToString(" ")
-                                                .ifBlank { null }
-                                        )
-                                    }
-                                },
-                                loading = isSubmitting
-                            )
+                                    )
+                                }
+                            }
                         }
+
+                        AuthStep.SetPassword -> {
+                            AeonAuthFormCard {
+                                AeonTextField(
+                                    value = password,
+                                    onValueChange = { password = it },
+                                    label = "Password",
+                                    placeholder = "Create a strong password",
+                                    helperText = "Use 10+ characters with upper, lower, and a number.",
+                                    variant = AeonTextFieldVariant.Glass,
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Password,
+                                        imeAction = ImeAction.Next
+                                    ),
+                                    trailingIcon = {
+                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                            Icon(
+                                                imageVector = if (passwordVisible) {
+                                                    Icons.Outlined.VisibilityOff
+                                                } else {
+                                                    Icons.Outlined.Visibility
+                                                },
+                                                contentDescription = null
+                                            )
+                                        }
+                                    }
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                AeonTextField(
+                                    value = confirmPassword,
+                                    onValueChange = { confirmPassword = it },
+                                    label = "Confirm password",
+                                    placeholder = "Re-enter your password",
+                                    variant = AeonTextFieldVariant.Glass,
+                                    visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Password,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    trailingIcon = {
+                                        IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                            Icon(
+                                                imageVector = if (confirmPasswordVisible) {
+                                                    Icons.Outlined.VisibilityOff
+                                                } else {
+                                                    Icons.Outlined.Visibility
+                                                },
+                                                contentDescription = null
+                                            )
+                                        }
+                                    }
+                                )
+
+                                Spacer(modifier = Modifier.height(18.dp))
+
+                                AeonAuthPrimaryButton(
+                                    text = "Create account",
+                                    onClick = {
+                                        submit {
+                                            if (signupToken.isBlank()) {
+                                                throw AuthException("Your signup session expired. Start again.")
+                                            }
+
+                                            if (password != confirmPassword) {
+                                                throw AuthException("Passwords do not match.")
+                                            }
+
+                                            authRepository.completeSignup(
+                                                signupToken = signupToken,
+                                                password = password,
+                                                displayName = listOf(firstName.trim(), lastName.trim())
+                                                    .filter(String::isNotBlank)
+                                                    .joinToString(" ")
+                                                    .ifBlank { null }
+                                            )
+                                        }
+                                    },
+                                    loading = isSubmitting
+                                )
+                            }
+                        }
+
+                        AuthStep.Welcome -> Unit
                     }
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    AuthStep.Welcome -> Unit
+                    Text(
+                        text = "Aeon encrypts your session locally on this device and keeps verification on the backend.",
+                        style = AeonTextStyles.Caption,
+                        color = colors.textTertiary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "Aeon encrypts your session locally on this device and keeps verification on the backend.",
-                    style = AeonTextStyles.Caption,
-                    color = colors.textTertiary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
             }
+
+            AeonToastHost(
+                hostState = toastHostState,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
+    }
+}
+
+private fun Throwable.toAuthToastText(): String {
+    val rawMessage = message?.trim().orEmpty()
+
+    return when {
+        rawMessage.equals("First name is required.", ignoreCase = true) -> "Enter first name"
+        rawMessage.equals("Email is required.", ignoreCase = true) -> "Enter email"
+        rawMessage.equals("Email and password are required.", ignoreCase = true) -> "Enter email and password"
+        rawMessage.equals("Enter the full 6-digit code.", ignoreCase = true) -> "Enter 6-digit code"
+        rawMessage.equals("Passwords do not match.", ignoreCase = true) -> "Passwords do not match"
+        rawMessage.equals("Your signup session expired. Start again.", ignoreCase = true) -> "Session expired. Start again"
+        rawMessage.contains("Auth backend is not configured", ignoreCase = true) -> "Service unavailable"
+        rawMessage.contains("Google sign-in is unavailable", ignoreCase = true) -> "Google sign-in unavailable"
+        rawMessage.isBlank() -> "Request failed"
+        else -> rawMessage
     }
 }
 

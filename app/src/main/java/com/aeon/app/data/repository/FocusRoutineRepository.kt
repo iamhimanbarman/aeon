@@ -12,6 +12,7 @@ import com.aeon.app.data.local.database.entities.FocusRoutineTemplateEntity
 import com.aeon.app.data.local.database.entities.FocusRoutineTimeTypeStorage
 import com.aeon.app.domain.focus.FocusOccurrenceGenerator
 import com.aeon.app.domain.focus.FocusRoutineDraft
+import com.aeon.app.domain.focus.FocusRoutineScheduleRules
 import com.aeon.app.domain.focus.FocusRoutineResolver
 import com.aeon.app.domain.focus.FocusRoutineTextLimits
 import com.aeon.app.domain.focus.FocusStatusTransitions
@@ -31,6 +32,11 @@ class FocusRoutineRepository(
     fun observeWeek(
         start: LocalDate = LocalDate.now().minusDays(6),
         end: LocalDate = LocalDate.now()
+    ): Flow<List<FocusRoutineOccurrenceEntity>> = dao.observeOccurrencesBetween(start, end)
+
+    fun observeRange(
+        start: LocalDate,
+        end: LocalDate
     ): Flow<List<FocusRoutineOccurrenceEntity>> = dao.observeOccurrencesBetween(start, end)
 
     suspend fun getOccurrence(id: String): FocusRoutineOccurrenceEntity? = dao.getOccurrence(id)
@@ -94,6 +100,10 @@ class FocusRoutineRepository(
         generateDate: LocalDate = LocalDate.now()
     ): FocusRoutineItemEntity {
         require(draft.title.isNotBlank()) { "Routine title is required." }
+        val existingOccurrences = dao.getOccurrences(generateDate)
+        FocusRoutineScheduleRules.validateNewDraft(draft, existingOccurrences)?.let { message ->
+            error(message)
+        }
         val now = Instant.now()
         val item = FocusRoutineItemEntity(
             id = AeonId.new("routine"),
@@ -122,6 +132,10 @@ class FocusRoutineRepository(
         generateDate: LocalDate = LocalDate.now()
     ) {
         require(item.title.isNotBlank()) { "Routine title is required." }
+        val existingOccurrences = dao.getOccurrences(generateDate)
+        FocusRoutineScheduleRules.validateItem(item, existingOccurrences)?.let { message ->
+            error(message)
+        }
         dao.upsertItem(
             item.copy(
                 title = FocusRoutineTextLimits.enforceTitle(item.title),
@@ -213,6 +227,15 @@ class FocusRoutineRepository(
         val current = dao.getOccurrence(occurrenceId) ?: error("Routine occurrence not found.")
         require(FocusStatusTransitions.canTransition(current.status, FocusRoutineStatusStorage.Upcoming))
         require(endAt.isAfter(startAt)) { "Routine end must be after start." }
+        val existingOccurrences = dao.getOccurrences(current.date)
+        FocusRoutineScheduleRules.validateOccurrenceWindow(
+            startAt = startAt,
+            endAt = endAt,
+            existingOccurrences = existingOccurrences,
+            ignoreOccurrenceId = current.id
+        )?.let { message ->
+            error(message)
+        }
         val updated = current.copy(
             status = FocusRoutineStatusStorage.Upcoming,
             plannedStartAt = startAt,

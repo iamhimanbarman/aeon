@@ -483,6 +483,18 @@ object FocusSessionDetailDestination : AppDestination {
     }
 }
 
+object FocusRoutineRecordsDestination : AppDestination {
+    override val route: String = "focus_routine_records/{${AeonNavArgs.MONTH}}"
+    override val baseRoute: String = "focus_routine_records"
+    override val title: String = "Routine Records"
+    override val graph: String = AeonGraphs.DETAIL
+    override val group: AeonDestinationGroup = AeonDestinationGroup.Detail
+
+    fun createRoute(month: String): String {
+        return AeonRouteBuilder.path(baseRoute, month)
+    }
+}
+
 object JournalEntryDetailDestination : AppDestination {
     override val route: String = "journal_entry_detail/{${AeonNavArgs.ENTRY_ID}}"
     override val baseRoute: String = "journal_entry_detail"
@@ -753,6 +765,7 @@ object AeonDestinations {
         GoalDetailDestination,
         InsightDetailDestination,
         FocusSessionDetailDestination,
+        FocusRoutineRecordsDestination,
         JournalEntryDetailDestination,
         MoodEntryDetailDestination,
         HealthEntryDestination,

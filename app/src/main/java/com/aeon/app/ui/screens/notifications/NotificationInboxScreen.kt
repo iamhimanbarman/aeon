@@ -1,35 +1,44 @@
 package com.aeon.app.ui.screens.notifications
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Paid
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -41,8 +50,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,20 +65,23 @@ import com.aeon.app.core.notifications.AeonNotificationType
 import com.aeon.app.ui.components.core.AeonButton
 import com.aeon.app.ui.components.core.AeonButtonSize
 import com.aeon.app.ui.components.core.AeonButtonVariant
-import com.aeon.app.ui.components.core.AeonCard
-import com.aeon.app.ui.components.core.AeonCardVariant
 import com.aeon.app.ui.components.core.AeonChip
 import com.aeon.app.ui.components.core.AeonChipSize
 import com.aeon.app.ui.components.core.AeonChipVariant
-import com.aeon.app.ui.components.core.AeonSectionHeader
-import com.aeon.app.ui.components.core.AeonSectionHeaderSize
-import com.aeon.app.ui.components.core.AeonSectionHeaderTone
+import com.aeon.app.ui.components.feedback.AeonDialog
 import com.aeon.app.ui.components.feedback.AeonNoDataState
+import com.aeon.app.ui.components.feedback.AeonToastDuration
+import com.aeon.app.ui.components.feedback.LocalAeonToastHostState
 import com.aeon.app.ui.components.layout.AeonScreen
+import com.aeon.app.ui.components.layout.AeonScreenConfig
 import com.aeon.app.ui.components.layout.aeonPremiumBackgroundBrush
+import com.aeon.app.ui.theme.AeonComponentShapes
+import com.aeon.app.ui.theme.AeonDuration
+import com.aeon.app.ui.theme.AeonEasing
 import com.aeon.app.ui.theme.AeonTextStyles
 import com.aeon.app.ui.theme.AeonThemeTokens
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -84,6 +96,7 @@ fun NotificationInboxRoute(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val toastHostState = LocalAeonToastHostState.current
     val records = uiState.records
 
     var selectedFilterName by rememberSaveable {
@@ -94,10 +107,17 @@ fun NotificationInboxRoute(
         NotificationInboxFilter.valueOf(selectedFilterName)
     }
 
-    LaunchedEffect(viewModel, onOpenRoute) {
+    LaunchedEffect(viewModel, onOpenRoute, toastHostState) {
         viewModel.events.collectLatest { event ->
             when (event) {
                 is AeonNotificationUiEvent.NavigateToRoute -> onOpenRoute(event.route)
+                is AeonNotificationUiEvent.Toast -> {
+                    toastHostState.showNeutral(
+                        title = event.message,
+                        duration = AeonToastDuration.Short
+                    )
+                }
+
                 else -> Unit
             }
         }
@@ -107,40 +127,25 @@ fun NotificationInboxRoute(
         records.filter(selectedFilter::matches)
     }
 
-    val state = remember(
-        records,
-        filteredRecords,
-        selectedFilter,
-        uiState.message,
-        uiState.isHealthy,
-        uiState.primaryIssue,
-        uiState.enabledRuleCount
-    ) {
+    val state = remember(records, filteredRecords, selectedFilter, uiState.working) {
         NotificationInboxUiState(
             records = records,
             filteredRecords = filteredRecords,
             selectedFilter = selectedFilter,
-            stats = NotificationInboxStats.from(records),
-            message = uiState.message,
-            isHealthy = uiState.isHealthy,
-            primaryIssue = uiState.primaryIssue,
-            enabledRuleCount = uiState.enabledRuleCount
+            working = uiState.working
         )
     }
 
     NotificationInboxScreen(
         state = state,
-        onBack = onBack,
         onOpenSettings = onOpenSettings,
+        onRefresh = viewModel::refresh,
+        onMarkAllAsRead = viewModel::markAllAsRead,
         onFilterSelected = { filter ->
             selectedFilterName = filter.name
         },
-        onOpenRecord = viewModel::openRecord,
         onMarkOpened = { record ->
             viewModel.markTapped(record.payloadId)
-        },
-        onDismissRecord = { record ->
-            viewModel.markDismissed(record.payloadId)
         },
         onClearHistory = viewModel::clearHistory,
         modifier = modifier
@@ -152,65 +157,35 @@ private data class NotificationInboxUiState(
     val records: List<AeonNotificationRecord> = emptyList(),
     val filteredRecords: List<AeonNotificationRecord> = emptyList(),
     val selectedFilter: NotificationInboxFilter = NotificationInboxFilter.All,
-    val stats: NotificationInboxStats = NotificationInboxStats(),
-    val message: String? = null,
-    val isHealthy: Boolean = true,
-    val primaryIssue: String? = null,
-    val enabledRuleCount: Int = 0
+    val working: Boolean = false
 ) {
+    val hasUnread: Boolean
+        get() = records.any { it.status == AeonNotificationStatus.Delivered }
+
     fun countFor(filter: NotificationInboxFilter): Int {
         return records.count(filter::matches)
     }
 }
 
 @Immutable
-private data class NotificationInboxStats(
-    val total: Int = 0,
-    val unread: Int = 0,
-    val scheduled: Int = 0,
-    val opened: Int = 0,
-    val issues: Int = 0
-) {
-    companion object {
-        fun from(records: List<AeonNotificationRecord>): NotificationInboxStats {
-            return NotificationInboxStats(
-                total = records.size,
-                unread = records.count { it.status == AeonNotificationStatus.Delivered },
-                scheduled = records.count {
-                    it.status == AeonNotificationStatus.Pending ||
-                        it.status == AeonNotificationStatus.Scheduled
-                },
-                opened = records.count { it.status == AeonNotificationStatus.Tapped },
-                issues = records.count {
-                    it.status == AeonNotificationStatus.Failed ||
-                        it.status == AeonNotificationStatus.Suppressed
-                }
-            )
-        }
-    }
-}
+private data class NotificationDaySection(
+    val date: LocalDate,
+    val label: String,
+    val records: List<AeonNotificationRecord>
+)
 
 private enum class NotificationInboxFilter(
     val title: String
 ) {
     All("All"),
     Unread("Unread"),
-    Scheduled("Scheduled"),
-    Opened("Opened"),
-    Dismissed("Dismissed"),
-    Failed("Issues");
+    Read("Read");
 
     fun matches(record: AeonNotificationRecord): Boolean {
         return when (this) {
             All -> true
             Unread -> record.status == AeonNotificationStatus.Delivered
-            Scheduled -> record.status == AeonNotificationStatus.Pending ||
-                record.status == AeonNotificationStatus.Scheduled
-            Opened -> record.status == AeonNotificationStatus.Tapped
-            Dismissed -> record.status == AeonNotificationStatus.Dismissed ||
-                record.status == AeonNotificationStatus.Cancelled
-            Failed -> record.status == AeonNotificationStatus.Failed ||
-                record.status == AeonNotificationStatus.Suppressed
+            Read -> record.isReadState()
         }
     }
 }
@@ -218,505 +193,471 @@ private enum class NotificationInboxFilter(
 @Composable
 private fun NotificationInboxScreen(
     state: NotificationInboxUiState,
-    onBack: () -> Unit,
     onOpenSettings: () -> Unit,
+    onRefresh: () -> Unit,
+    onMarkAllAsRead: () -> Unit,
     onFilterSelected: (NotificationInboxFilter) -> Unit,
-    onOpenRecord: (AeonNotificationRecord) -> Unit,
     onMarkOpened: (AeonNotificationRecord) -> Unit,
-    onDismissRecord: (AeonNotificationRecord) -> Unit,
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var expandedRecordId by rememberSaveable { mutableStateOf<String?>(null) }
+    var actionsExpanded by rememberSaveable { mutableStateOf(false) }
+    var showClearHistoryDialog by rememberSaveable { mutableStateOf(false) }
+
+    val groupedSections = remember(state.filteredRecords) {
+        state.filteredRecords.toDaySections()
+    }
+
+    LaunchedEffect(groupedSections, expandedRecordId) {
+        if (expandedRecordId == null) return@LaunchedEffect
+
+        val stillVisible = groupedSections
+            .asSequence()
+            .flatMap { section -> section.records.asSequence() }
+            .any { record -> record.id == expandedRecordId }
+
+        if (!stillVisible) {
+            expandedRecordId = null
+        }
+    }
+
+    if (showClearHistoryDialog) {
+        AeonDialog(
+            onDismissRequest = { showClearHistoryDialog = false },
+            title = "Clear notification history",
+            body = "This removes the stored inbox history from the device.",
+            actions = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AeonButton(
+                        text = "Cancel",
+                        onClick = { showClearHistoryDialog = false },
+                        modifier = Modifier.weight(1f),
+                        variant = AeonButtonVariant.Secondary,
+                        size = AeonButtonSize.Small
+                    )
+                    AeonButton(
+                        text = "Clear",
+                        onClick = {
+                            showClearHistoryDialog = false
+                            onClearHistory()
+                        },
+                        modifier = Modifier.weight(1f),
+                        variant = AeonButtonVariant.Danger,
+                        size = AeonButtonSize.Small
+                    )
+                }
+            }
+        )
+    }
+
     AeonScreen(
         modifier = modifier,
+        config = AeonScreenConfig(scrollable = false),
         backgroundBrush = aeonPremiumBackgroundBrush(),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        NotificationInboxHeader(
-            state = state,
-            onBack = onBack,
-            onOpenSettings = onOpenSettings,
-            onClearHistory = onClearHistory
+        NotificationInboxTopBar(
+            enabled = !state.working,
+            onRefresh = {
+                actionsExpanded = false
+                onRefresh()
+            },
+            onMarkAllAsRead = {
+                actionsExpanded = false
+                onMarkAllAsRead()
+            },
+            onOpenSettings = {
+                actionsExpanded = false
+                onOpenSettings()
+            },
+            onShowClearHistory = {
+                actionsExpanded = false
+                showClearHistoryDialog = true
+            },
+            actionsExpanded = actionsExpanded,
+            onActionsExpandedChange = { actionsExpanded = it },
+            hasUnread = state.hasUnread,
+            hasHistory = state.records.isNotEmpty()
         )
-
-        AnimatedVisibility(visible = !state.message.isNullOrBlank()) {
-            NotificationInboxMessageCard(message = state.message.orEmpty())
-        }
-
-        NotificationInboxSummaryCard(state = state)
 
         NotificationInboxFilters(
             state = state,
             onFilterSelected = onFilterSelected
         )
 
-        NotificationHistoryHeader(state = state)
-
-        if (state.filteredRecords.isEmpty()) {
-            NotificationInboxEmptyState(
-                selectedFilter = state.selectedFilter,
-                onResetFilter = {
-                    onFilterSelected(NotificationInboxFilter.All)
-                }
-            )
+        if (groupedSections.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                NotificationInboxEmptyState(
+                    selectedFilter = state.selectedFilter,
+                    onResetFilter = {
+                        onFilterSelected(NotificationInboxFilter.All)
+                    }
+                )
+            }
         } else {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 12.dp)
             ) {
-                state.filteredRecords.forEach { record ->
-                    NotificationRecordCard(
-                        record = record,
-                        onOpenRecord = onOpenRecord,
-                        onMarkOpened = onMarkOpened,
-                        onDismissRecord = onDismissRecord
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun NotificationInboxHeader(
-    state: NotificationInboxUiState,
-    onBack: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onClearHistory: () -> Unit
-) {
-    AeonSectionHeader(
-        eyebrow = if (state.isHealthy) {
-            "Aeon system"
-        } else {
-            "Needs attention"
-        },
-        title = "Notification center",
-        subtitle = state.primaryIssue
-            ?: "Review reminders, AI signals, private alerts, and the full notification history.",
-        size = AeonSectionHeaderSize.Hero,
-        tone = if (state.isHealthy) {
-            AeonSectionHeaderTone.Brand
-        } else {
-            AeonSectionHeaderTone.Warning
-        },
-        action = {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                AeonChip(
-                    text = if (state.isHealthy) "Healthy" else "Check",
-                    variant = if (state.isHealthy) {
-                        AeonChipVariant.Success
-                    } else {
-                        AeonChipVariant.Warning
-                    },
-                    size = AeonChipSize.Compact
-                )
-                AeonChip(
-                    text = "${state.stats.total} total",
-                    variant = AeonChipVariant.Premium,
-                    size = AeonChipSize.Compact
-                )
-            }
-        }
-    )
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        AeonButton(
-            text = "Back",
-            onClick = onBack,
-            variant = AeonButtonVariant.Ghost,
-            size = AeonButtonSize.Small
-        )
-        AeonButton(
-            text = "Settings",
-            onClick = onOpenSettings,
-            variant = AeonButtonVariant.Secondary,
-            size = AeonButtonSize.Small
-        )
-        AeonButton(
-            text = "Clear history",
-            onClick = onClearHistory,
-            variant = AeonButtonVariant.Danger,
-            size = AeonButtonSize.Small,
-            enabled = state.records.isNotEmpty()
-        )
-    }
-}
-
-@Composable
-private fun NotificationInboxMessageCard(
-    message: String
-) {
-    val colors = AeonThemeTokens.colors
-
-    AeonCard(
-        variant = AeonCardVariant.Glass,
-        containerColor = colors.surfaceElevated.copy(alpha = 0.82f)
-    ) {
-        Text(
-            text = message,
-            style = AeonTextStyles.Caption.copy(color = colors.brand)
-        )
-    }
-}
-
-@Composable
-private fun NotificationInboxSummaryCard(
-    state: NotificationInboxUiState
-) {
-    val colors = AeonThemeTokens.colors
-
-    AeonCard(
-        variant = AeonCardVariant.Hero,
-        containerColor = colors.surfaceElevated
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = if (state.isHealthy) "Delivery is stable" else "Delivery needs review",
-                    style = AeonTextStyles.CardTitle.copy(
-                        color = colors.textPrimary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                )
-                Text(
-                    text = state.primaryIssue
-                        ?: "Channels, permissions, and active rules look ready. Aeon is storing real notification history here.",
-                    style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary)
-                )
-            }
-
-            AeonChip(
-                text = "${state.enabledRuleCount} rules",
-                variant = AeonChipVariant.Info,
-                size = AeonChipSize.Compact
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                NotificationStatTile(
-                    label = "Unread",
-                    value = state.stats.unread.toString(),
-                    accent = colors.brand,
-                    modifier = Modifier.weight(1f)
-                )
-                NotificationStatTile(
-                    label = "Scheduled",
-                    value = state.stats.scheduled.toString(),
-                    accent = colors.info,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                NotificationStatTile(
-                    label = "Opened",
-                    value = state.stats.opened.toString(),
-                    accent = colors.success,
-                    modifier = Modifier.weight(1f)
-                )
-                NotificationStatTile(
-                    label = "Issues",
-                    value = state.stats.issues.toString(),
-                    accent = colors.warning,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun NotificationStatTile(
-    label: String,
-    value: String,
-    accent: Color,
-    modifier: Modifier = Modifier
-) {
-    val colors = AeonThemeTokens.colors
-
-    AeonCard(
-        modifier = modifier,
-        variant = AeonCardVariant.Compact,
-        containerColor = colors.surface.copy(alpha = 0.82f),
-        borderColor = accent.copy(alpha = 0.24f)
-    ) {
-        Text(
-            text = value,
-            style = AeonTextStyles.StatNumber.copy(color = accent)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = AeonTextStyles.Caption.copy(color = colors.textSecondary)
-        )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun NotificationInboxFilters(
-    state: NotificationInboxUiState,
-    onFilterSelected: (NotificationInboxFilter) -> Unit
-) {
-    val colors = AeonThemeTokens.colors
-
-    AeonSectionHeader(
-        eyebrow = "Filter",
-        title = "Inbox view",
-        subtitle = "Move between unread, scheduled, opened, and issue states without leaving the page.",
-        size = AeonSectionHeaderSize.Medium,
-        tone = AeonSectionHeaderTone.Subtle
-    )
-
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        NotificationInboxFilter.entries.forEach { filter ->
-            val count = state.countFor(filter)
-
-            AeonChip(
-                text = "${filter.title} $count",
-                variant = if (filter == state.selectedFilter) {
-                    AeonChipVariant.Filled
-                } else {
-                    AeonChipVariant.Outline
-                },
-                size = AeonChipSize.Medium,
-                onClick = {
-                    onFilterSelected(filter)
-                },
-                leadingIcon = if (filter == state.selectedFilter) {
-                    {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(colors.brand)
+                groupedSections.forEach { section ->
+                    item(key = "section_${section.date}") {
+                        NotificationDateHeader(
+                            label = section.label,
+                            count = section.records.size
                         )
                     }
-                } else {
-                    null
+
+                    items(
+                        items = section.records,
+                        key = { record -> record.id }
+                    ) { record ->
+                        NotificationRecordBar(
+                            record = record,
+                            expanded = expandedRecordId == record.id,
+                            onToggleExpanded = {
+                                val willExpand = expandedRecordId != record.id
+                                if (willExpand && record.status == AeonNotificationStatus.Delivered) {
+                                    onMarkOpened(record)
+                                }
+                                expandedRecordId = if (expandedRecordId == record.id) {
+                                    null
+                                } else {
+                                    record.id
+                                }
+                            }
+                        )
+                    }
                 }
-            )
+            }
         }
     }
 }
 
 @Composable
-private fun NotificationHistoryHeader(
-    state: NotificationInboxUiState
+private fun NotificationInboxTopBar(
+    enabled: Boolean,
+    onRefresh: () -> Unit,
+    onMarkAllAsRead: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onShowClearHistory: () -> Unit,
+    actionsExpanded: Boolean,
+    onActionsExpandedChange: (Boolean) -> Unit,
+    hasUnread: Boolean,
+    hasHistory: Boolean
 ) {
     val colors = AeonThemeTokens.colors
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Bottom
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = state.selectedFilter.sectionTitle(),
-                style = AeonTextStyles.CardTitle.copy(color = colors.textPrimary)
+        Text(
+            text = "Notifications",
+            style = AeonTextStyles.SectionTitle.copy(
+                fontWeight = FontWeight.Bold,
+                color = colors.textPrimary
             )
-            Text(
-                text = "${state.filteredRecords.size} notifications in this view",
-                style = AeonTextStyles.Micro.copy(color = colors.textTertiary)
+        )
+
+        Box {
+            Surface(
+                shape = CircleShape,
+                color = colors.surfaceElevated.copy(alpha = 0.94f),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = colors.divider.copy(alpha = 0.72f)
+                )
+            ) {
+                IconButton(
+                    enabled = enabled,
+                    onClick = {
+                        onActionsExpandedChange(true)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Notification options",
+                        tint = colors.textPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = actionsExpanded,
+                onDismissRequest = { onActionsExpandedChange(false) },
+                containerColor = colors.surfaceElevated
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Refresh") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = onRefresh,
+                    enabled = enabled
+                )
+                DropdownMenuItem(
+                    text = { Text("Mark all as read") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.DoneAll,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = onMarkAllAsRead,
+                    enabled = enabled && hasUnread
+                )
+                DropdownMenuItem(
+                    text = { Text("Notification settings") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = onOpenSettings
+                )
+                DropdownMenuItem(
+                    text = { Text("Clear history") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteSweep,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = onShowClearHistory,
+                    enabled = enabled && hasHistory
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationInboxFilters(
+    state: NotificationInboxUiState,
+    onFilterSelected: (NotificationInboxFilter) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(NotificationInboxFilter.entries) { filter ->
+            AeonChip(
+                text = "${filter.title} ${state.countFor(filter)}",
+                variant = filter.filterChipVariant(
+                    selected = filter == state.selectedFilter
+                ),
+                size = AeonChipSize.Compact,
+                onClick = {
+                    onFilterSelected(filter)
+                }
             )
         }
+    }
+}
 
-        AeonChip(
-            text = if (state.selectedFilter == NotificationInboxFilter.All) {
-                "Live history"
-            } else {
-                state.selectedFilter.title
-            },
-            variant = AeonChipVariant.Ghost,
-            size = AeonChipSize.Compact
+@Composable
+private fun NotificationDateHeader(
+    label: String,
+    count: Int
+) {
+    val colors = AeonThemeTokens.colors
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = AeonTextStyles.SectionTitle.copy(color = colors.textPrimary)
+        )
+        Text(
+            text = "$count",
+            style = AeonTextStyles.Caption.copy(color = colors.textTertiary)
         )
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun NotificationRecordCard(
+private fun NotificationRecordBar(
     record: AeonNotificationRecord,
-    onOpenRecord: (AeonNotificationRecord) -> Unit,
-    onMarkOpened: (AeonNotificationRecord) -> Unit,
-    onDismissRecord: (AeonNotificationRecord) -> Unit
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit
 ) {
     val colors = AeonThemeTokens.colors
     val accent = record.accentColor()
-    val canOpen = !record.deepLinkRoute.isNullOrBlank()
-    val canDismiss = record.status == AeonNotificationStatus.Delivered ||
-        record.status == AeonNotificationStatus.Scheduled ||
-        record.status == AeonNotificationStatus.Pending
 
-    AeonCard(
-        variant = record.cardVariant(),
-        onClick = if (canOpen) {
-            { onOpenRecord(record) }
-        } else {
-            null
-        },
-        containerColor = colors.surfaceElevated,
-        borderColor = accent.copy(alpha = 0.18f)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = record.type.icon(),
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(20.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = tween(
+                    durationMillis = AeonDuration.Fast,
+                    easing = AeonEasing.Standard
                 )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ),
+        onClick = onToggleExpanded,
+        shape = AeonComponentShapes.CardCompact,
+        color = record.containerColor(),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(
+            width = if (record.status == AeonNotificationStatus.Delivered) 1.2.dp else 1.dp,
+            color = accent.copy(
+                alpha = if (record.status == AeonNotificationStatus.Delivered) 0.32f else 0.18f
+            )
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = accent.copy(alpha = 0.14f),
+                    contentColor = accent
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = record.type.icon(),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = record.title,
-                            style = AeonTextStyles.CardTitle.copy(color = colors.textPrimary),
-                            maxLines = 2,
+                            modifier = Modifier.weight(1f),
+                            style = AeonTextStyles.CardTitle.copy(
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Text(
-                            text = record.body,
-                            style = AeonTextStyles.CardSubtitle.copy(color = colors.textSecondary),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
+
+                        if (record.status == AeonNotificationStatus.Delivered) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(accent, CircleShape)
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.size(8.dp))
-
-                    AeonChip(
-                        text = record.status.uiLabel(),
-                        variant = record.status.chipVariant(),
-                        size = AeonChipSize.Compact
+                    Text(
+                        text = record.collapsedMetaLabel(),
+                        style = AeonTextStyles.Caption.copy(color = colors.textSecondary),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    AeonChip(
-                        text = record.type.uiLabel(),
-                        variant = AeonChipVariant.Outline,
-                        size = AeonChipSize.Compact
+                    Text(
+                        text = record.primaryMomentTimeLabel(),
+                        style = AeonTextStyles.Micro.copy(color = colors.textTertiary),
+                        maxLines = 1
                     )
-                    AeonChip(
-                        text = record.source.uiLabel(),
-                        variant = AeonChipVariant.Ghost,
-                        size = AeonChipSize.Compact
+                }
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(
+                    animationSpec = tween(
+                        durationMillis = AeonDuration.Fast,
+                        easing = AeonEasing.Decelerate
                     )
-                    AeonChip(
-                        text = record.primaryMomentLabel(),
-                        variant = AeonChipVariant.Info,
-                        size = AeonChipSize.Compact,
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.Schedule,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
+                ) + fadeIn(
+                    animationSpec = tween(
+                        durationMillis = AeonDuration.Fast,
+                        easing = AeonEasing.Decelerate
                     )
-                    if (canOpen) {
+                ),
+                exit = shrinkVertically(
+                    animationSpec = tween(
+                        durationMillis = AeonDuration.UltraFast,
+                        easing = AeonEasing.Accelerate
+                    )
+                ) + fadeOut(
+                    animationSpec = tween(
+                        durationMillis = AeonDuration.UltraFast,
+                        easing = AeonEasing.Accelerate
+                    )
+                )
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HorizontalDivider(color = colors.divider.copy(alpha = 0.5f))
+
+                    Text(
+                        text = record.body,
+                        style = AeonTextStyles.CardSubtitle.copy(color = colors.textPrimary)
+                    )
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         AeonChip(
-                            text = "Opens app",
-                            variant = AeonChipVariant.Premium,
+                            text = record.statusDisplayLabel(),
+                            variant = record.status.chipVariant(),
+                            size = AeonChipSize.Compact
+                        )
+                        AeonChip(
+                            text = record.type.uiLabel(),
+                            variant = AeonChipVariant.Outline,
+                            size = AeonChipSize.Compact
+                        )
+                        AeonChip(
+                            text = record.source.uiLabel(),
+                            variant = AeonChipVariant.Ghost,
                             size = AeonChipSize.Compact
                         )
                     }
                 }
-
-                if (!record.failureReason.isNullOrBlank()) {
-                    Text(
-                        text = record.failureReason,
-                        style = AeonTextStyles.Micro.copy(color = colors.warning)
-                    )
-                }
             }
-        }
-
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 10.dp),
-            color = colors.divider.copy(alpha = 0.54f)
-        )
-
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            AeonButton(
-                text = "Open",
-                onClick = { onOpenRecord(record) },
-                variant = AeonButtonVariant.Secondary,
-                size = AeonButtonSize.Small,
-                enabled = canOpen
-            )
-            AeonButton(
-                text = "Mark opened",
-                onClick = { onMarkOpened(record) },
-                variant = AeonButtonVariant.Ghost,
-                size = AeonButtonSize.Small,
-                enabled = record.status != AeonNotificationStatus.Tapped
-            )
-            AeonButton(
-                text = "Dismiss",
-                onClick = { onDismissRecord(record) },
-                variant = AeonButtonVariant.Danger,
-                size = AeonButtonSize.Small,
-                enabled = canDismiss
-            )
         }
     }
 }
@@ -727,7 +668,7 @@ private fun NotificationInboxEmptyState(
     onResetFilter: () -> Unit
 ) {
     AeonNoDataState(
-        title = "No notifications found",
+        title = "No notifications",
         message = selectedFilter.emptyMessage(),
         icon = {
             Icon(
@@ -749,18 +690,100 @@ private fun NotificationInboxEmptyState(
     )
 }
 
-private fun AeonNotificationRecord.cardVariant(): AeonCardVariant {
+private fun List<AeonNotificationRecord>.toDaySections(): List<NotificationDaySection> {
+    if (isEmpty()) return emptyList()
+
+    val today = LocalDate.now()
+
+    return sortedByDescending { record ->
+        record.primaryMomentEpochMillis()
+    }.groupBy { record ->
+        record.primaryMomentLocalDate()
+    }.entries.sortedByDescending { entry ->
+        entry.key
+    }.map { entry ->
+        NotificationDaySection(
+            date = entry.key,
+            label = entry.key.toNotificationSectionLabel(today),
+            records = entry.value.sortedByDescending { record ->
+                record.primaryMomentEpochMillis()
+            }
+        )
+    }
+}
+
+private fun NotificationInboxFilter.emptyMessage(): String {
+    return when (this) {
+        NotificationInboxFilter.All ->
+            "Aeon has not stored any notification history yet."
+
+        NotificationInboxFilter.Unread ->
+            "You do not have unread notifications right now."
+
+        NotificationInboxFilter.Read ->
+            "No read notifications were found."
+    }
+}
+
+private fun AeonNotificationRecord.primaryMomentEpochMillis(): Long {
     return when (status) {
-        AeonNotificationStatus.Delivered -> AeonCardVariant.Elevated
-        AeonNotificationStatus.Tapped -> AeonCardVariant.Default
+        AeonNotificationStatus.Tapped -> tappedAtEpochMillis
         AeonNotificationStatus.Dismissed,
-        AeonNotificationStatus.Cancelled -> AeonCardVariant.Compact
-        AeonNotificationStatus.Failed,
-        AeonNotificationStatus.Suppressed -> AeonCardVariant.Insight
+        AeonNotificationStatus.Cancelled -> dismissedAtEpochMillis
+
+        AeonNotificationStatus.Delivered -> deliveredAtEpochMillis
+
         AeonNotificationStatus.Pending,
         AeonNotificationStatus.Scheduled,
-        AeonNotificationStatus.Draft -> AeonCardVariant.Glass
+        AeonNotificationStatus.Draft -> scheduledAtEpochMillis
+
+        AeonNotificationStatus.Suppressed,
+        AeonNotificationStatus.Failed -> deliveredAtEpochMillis
+    } ?: createdAtEpochMillis
+}
+
+private fun AeonNotificationRecord.primaryMomentLocalDate(): LocalDate {
+    return Instant
+        .ofEpochMilli(primaryMomentEpochMillis())
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+}
+
+private fun AeonNotificationRecord.primaryMomentTimeLabel(): String {
+    return Instant
+        .ofEpochMilli(primaryMomentEpochMillis())
+        .atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("h:mm a"))
+}
+
+private fun AeonNotificationRecord.collapsedMetaLabel(): String {
+    return "${statusDisplayLabel()} | ${type.uiLabel()} | ${source.uiLabel()}"
+}
+
+@Composable
+private fun AeonNotificationRecord.containerColor(): Color {
+    val colors = AeonThemeTokens.colors
+    val accent = accentColor()
+
+    val blendFraction = when (status) {
+        AeonNotificationStatus.Delivered -> 0.14f
+        AeonNotificationStatus.Tapped -> 0.035f
+        AeonNotificationStatus.Pending,
+        AeonNotificationStatus.Scheduled,
+        AeonNotificationStatus.Draft -> 0.08f
+
+        AeonNotificationStatus.Dismissed,
+        AeonNotificationStatus.Cancelled -> 0.04f
+
+        AeonNotificationStatus.Suppressed,
+        AeonNotificationStatus.Failed -> 0.1f
     }
+
+    return lerp(
+        start = colors.surfaceElevated,
+        stop = accent,
+        fraction = blendFraction
+    )
 }
 
 @Composable
@@ -770,62 +793,18 @@ private fun AeonNotificationRecord.accentColor(): Color {
     return when (status) {
         AeonNotificationStatus.Failed,
         AeonNotificationStatus.Suppressed -> colors.warning
-        AeonNotificationStatus.Delivered -> colors.brand
-        AeonNotificationStatus.Tapped -> colors.success
+
+        AeonNotificationStatus.Delivered -> colors.habit
+
+        AeonNotificationStatus.Tapped -> colors.textSecondary
+
         AeonNotificationStatus.Pending,
         AeonNotificationStatus.Scheduled,
         AeonNotificationStatus.Draft -> colors.info
+
         AeonNotificationStatus.Dismissed,
         AeonNotificationStatus.Cancelled -> colors.textTertiary
     }
-}
-
-private fun NotificationInboxFilter.sectionTitle(): String {
-    return when (this) {
-        NotificationInboxFilter.All -> "Recent notification history"
-        NotificationInboxFilter.Unread -> "Unread notifications"
-        NotificationInboxFilter.Scheduled -> "Scheduled notifications"
-        NotificationInboxFilter.Opened -> "Opened notifications"
-        NotificationInboxFilter.Dismissed -> "Dismissed notifications"
-        NotificationInboxFilter.Failed -> "Issue notifications"
-    }
-}
-
-private fun NotificationInboxFilter.emptyMessage(): String {
-    return when (this) {
-        NotificationInboxFilter.All ->
-            "Aeon has not stored any notification history yet."
-        NotificationInboxFilter.Unread ->
-            "You have no unread delivered notifications."
-        NotificationInboxFilter.Scheduled ->
-            "No notifications are currently visible as scheduled in history."
-        NotificationInboxFilter.Opened ->
-            "You have not opened any notifications yet."
-        NotificationInboxFilter.Dismissed ->
-            "No dismissed or cancelled notifications found."
-        NotificationInboxFilter.Failed ->
-            "No failed or suppressed notifications found."
-    }
-}
-
-private fun AeonNotificationRecord.primaryMomentLabel(): String {
-    val timestamp = when {
-        tappedAtEpochMillis != null -> tappedAtEpochMillis
-        deliveredAtEpochMillis != null -> deliveredAtEpochMillis
-        scheduledAtEpochMillis != null -> scheduledAtEpochMillis
-        dismissedAtEpochMillis != null -> dismissedAtEpochMillis
-        else -> createdAtEpochMillis
-    }
-
-    val prefix = when {
-        tappedAtEpochMillis != null -> "Opened"
-        deliveredAtEpochMillis != null -> "Delivered"
-        scheduledAtEpochMillis != null -> "Scheduled"
-        dismissedAtEpochMillis != null -> "Dismissed"
-        else -> "Created"
-    }
-
-    return "$prefix ${timestamp.asNotificationTime()}"
 }
 
 private fun AeonNotificationStatus.uiLabel(): String {
@@ -848,11 +827,37 @@ private fun AeonNotificationStatus.chipVariant(): AeonChipVariant {
         AeonNotificationStatus.Pending,
         AeonNotificationStatus.Scheduled,
         AeonNotificationStatus.Draft -> AeonChipVariant.Info
-        AeonNotificationStatus.Tapped -> AeonChipVariant.Filled
+
+        AeonNotificationStatus.Tapped,
         AeonNotificationStatus.Dismissed,
         AeonNotificationStatus.Cancelled -> AeonChipVariant.Outline
+
         AeonNotificationStatus.Suppressed,
         AeonNotificationStatus.Failed -> AeonChipVariant.Danger
+    }
+}
+
+private fun AeonNotificationRecord.isReadState(): Boolean {
+    return status == AeonNotificationStatus.Tapped ||
+        status == AeonNotificationStatus.Dismissed ||
+        status == AeonNotificationStatus.Cancelled
+}
+
+private fun AeonNotificationRecord.statusDisplayLabel(): String {
+    return when {
+        status == AeonNotificationStatus.Delivered -> "Unread"
+        isReadState() -> "Read"
+        else -> status.uiLabel()
+    }
+}
+
+private fun NotificationInboxFilter.filterChipVariant(
+    selected: Boolean
+): AeonChipVariant {
+    return when {
+        this == NotificationInboxFilter.Unread && selected -> AeonChipVariant.Success
+        selected -> AeonChipVariant.Filled
+        else -> AeonChipVariant.Outline
     }
 }
 
@@ -883,26 +888,43 @@ private fun AeonNotificationType.icon(): ImageVector {
     return when (this) {
         AeonNotificationType.DailyPlan,
         AeonNotificationType.TaskReminder -> Icons.Outlined.Checklist
+
         AeonNotificationType.HabitReminder -> Icons.Outlined.CheckCircleOutline
+
         AeonNotificationType.FocusSession,
         AeonNotificationType.BreakReminder -> Icons.Outlined.CenterFocusStrong
+
         AeonNotificationType.MoodCheckIn,
         AeonNotificationType.JournalReminder -> Icons.Outlined.Mood
+
         AeonNotificationType.HealthReminder -> Icons.Outlined.HealthAndSafety
+
         AeonNotificationType.FinanceReminder -> Icons.Outlined.Paid
+
         AeonNotificationType.GoalReminder -> Icons.Outlined.Flag
+
         AeonNotificationType.WeeklyReview,
         AeonNotificationType.AIInsight -> Icons.Outlined.AutoAwesome
+
         AeonNotificationType.DataBackup -> Icons.Outlined.Settings
+
         AeonNotificationType.SystemAlert -> Icons.Outlined.WarningAmber
     }
 }
 
-private fun Long.asNotificationTime(): String {
-    val formatter = DateTimeFormatter.ofPattern("dd MMM, h:mm a")
+private fun LocalDate.toNotificationSectionLabel(
+    today: LocalDate
+): String {
+    return when (this) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> format(DateTimeFormatter.ofPattern("d MMMM yyyy"))
+    }
+}
 
+private fun Long.asNotificationMoment(): String {
     return Instant
         .ofEpochMilli(this)
         .atZone(ZoneId.systemDefault())
-        .format(formatter)
+        .format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a"))
 }

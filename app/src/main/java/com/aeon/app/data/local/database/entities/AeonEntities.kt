@@ -1239,6 +1239,34 @@ data class BudgetEntity(
 )
 
 @Entity(
+    tableName = "finance_counterparties",
+    indices = [
+        Index(value = ["name"], name = "index_finance_counterparties_name"),
+        Index(value = ["email"], name = "index_finance_counterparties_email")
+    ]
+)
+data class FinanceCounterpartyEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+
+    @ColumnInfo(name = "name")
+    val name: String,
+
+    @ColumnInfo(name = "email")
+    val email: String? = null,
+
+    @ColumnInfo(name = "created_at")
+    val createdAt: Instant = Instant.now(),
+
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Instant = Instant.now(),
+
+    @ColumnInfo(name = "deleted_at")
+    val deletedAt: Instant? = null
+)
+
+@Entity(
     tableName = "finance_counterparty_records",
     indices = [
         Index(
@@ -1252,6 +1280,10 @@ data class BudgetEntity(
         Index(
             value = ["occurred_at"],
             name = "index_finance_counterparty_records_occurred_at"
+        ),
+        Index(
+            value = ["counterparty_id"],
+            name = "index_finance_counterparty_records_counterparty_id"
         )
     ]
 )
@@ -1259,6 +1291,9 @@ data class FinanceCounterpartyRecordEntity(
     @PrimaryKey
     @ColumnInfo(name = "id")
     val id: String,
+
+    @ColumnInfo(name = "counterparty_id")
+    val counterpartyId: String? = null,
 
     @ColumnInfo(name = "counterparty_name")
     val counterpartyName: String,

@@ -10,6 +10,7 @@ import com.aeon.app.data.local.database.entities.AeonSettingsEntity
 import com.aeon.app.data.local.database.entities.BudgetEntity
 import com.aeon.app.data.local.database.entities.FinanceAccountEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryEntity
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyEntity
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordEntity
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
 import com.aeon.app.data.local.database.entities.FocusSessionEntity
@@ -1209,6 +1210,9 @@ interface FinanceDao {
     suspend fun upsertBudgets(budgets: List<BudgetEntity>)
 
     @Upsert
+    suspend fun upsertCounterparty(counterparty: FinanceCounterpartyEntity)
+
+    @Upsert
     suspend fun upsertCounterpartyRecord(record: FinanceCounterpartyRecordEntity)
 
     @Query(
@@ -1332,6 +1336,25 @@ interface FinanceDao {
 
     @Query(
         """
+        SELECT * FROM finance_counterparties
+        WHERE deleted_at IS NULL
+        ORDER BY updated_at DESC, name COLLATE NOCASE ASC
+        """
+    )
+    fun observeCounterparties(): Flow<List<FinanceCounterpartyEntity>>
+
+    @Query(
+        """
+        SELECT * FROM finance_counterparties
+        WHERE id = :counterpartyId
+        AND deleted_at IS NULL
+        LIMIT 1
+        """
+    )
+    fun observeCounterpartyById(counterpartyId: String): Flow<FinanceCounterpartyEntity?>
+
+    @Query(
+        """
         SELECT * FROM finance_counterparty_records
         WHERE deleted_at IS NULL
         ORDER BY
@@ -1344,6 +1367,34 @@ interface FinanceDao {
         """
     )
     fun observeCounterpartyRecords(): Flow<List<FinanceCounterpartyRecordEntity>>
+
+    @Query(
+        """
+        SELECT * FROM finance_counterparty_records
+        WHERE deleted_at IS NULL
+        AND counterparty_id = :counterpartyId
+        ORDER BY
+            CASE status
+                WHEN 'open' THEN 0
+                ELSE 1
+            END,
+            occurred_at DESC,
+            created_at DESC
+        """
+    )
+    fun observeCounterpartyRecordsForCounterparty(
+        counterpartyId: String
+    ): Flow<List<FinanceCounterpartyRecordEntity>>
+
+    @Query(
+        """
+        SELECT * FROM finance_counterparties
+        WHERE deleted_at IS NULL
+        AND lower(email) = lower(:email)
+        LIMIT 1
+        """
+    )
+    suspend fun getCounterpartyByEmail(email: String): FinanceCounterpartyEntity?
 
     @Query(
         """

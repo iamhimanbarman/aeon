@@ -240,7 +240,7 @@ fun FinanceTopBarActions(config: FinanceTopBarConfig) {
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Borrow & lend") },
+                    text = { Text("Ledger") },
                     onClick = {
                         actionsExpanded = false
                         config.onOpenCounterpartyRecords()

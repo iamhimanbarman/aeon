@@ -28,6 +28,7 @@ import com.aeon.app.ui.screens.ai.AiChatScreenRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceBudgetSetupRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceCategoriesRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceCategoryEditorRoute
+import com.aeon.app.ui.screens.finance.AeonFinanceCounterpartyDetailRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceCounterpartyRecordsRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceEntryDetailRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceOverviewRoute
@@ -135,8 +136,8 @@ private fun NavGraphBuilder.aeonTopLevelRoutes(
         )
     }
 
-    composable(InsightsDestination.route) {
-        InsightsRoute(navigationState)
+    composable(LedgerDestination.route) {
+        LedgerRoute(navigationState)
     }
 
     composable(FinanceDestination.route) {
@@ -159,6 +160,10 @@ private fun NavGraphBuilder.aeonTopLevelRoutes(
             },
             onTopBarConfigChanged = onFinanceTopBarConfigChanged
         )
+    }
+
+    composable(InsightsDestination.route) {
+        InsightsRoute(navigationState)
     }
 }
 
@@ -551,6 +556,15 @@ private fun NavGraphBuilder.aeonDetailRoutes(
             onBack = navigationState::navigateBack
         )
     }
+
+    composable(
+        route = LedgerCounterpartyDetailDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.COUNTERPARTY_ID))
+    ) { entry ->
+        AeonFinanceCounterpartyDetailRoute(
+            counterpartyId = entry.stringArg(AeonNavArgs.COUNTERPARTY_ID)
+        )
+    }
 }
 
 private fun NavGraphBuilder.aeonFinanceRoutes(
@@ -623,7 +637,9 @@ private fun NavGraphBuilder.aeonFinanceRoutes(
     }
 
     composable(FinanceCounterpartyRecordsDestination.route) {
-        AeonFinanceCounterpartyRecordsRoute()
+        AeonFinanceCounterpartyRecordsRoute(
+            onOpenCounterparty = navigationState::navigateToLedgerCounterparty
+        )
     }
 }
 
@@ -789,6 +805,15 @@ private fun FocusRoute(
             navigationState.navigateToFocusRoutineRecords(month.toString())
         },
         onTopBarConfigChanged = onFocusTopBarConfigChanged
+    )
+}
+
+@Composable
+private fun LedgerRoute(
+    navigationState: AeonNavigationState
+) {
+    AeonFinanceCounterpartyRecordsRoute(
+        onOpenCounterparty = navigationState::navigateToLedgerCounterparty
     )
 }
 

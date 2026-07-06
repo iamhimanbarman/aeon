@@ -5,11 +5,13 @@ import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.SpaceDashboard
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.SpaceDashboard
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -110,14 +112,14 @@ object AeonTopLevelDestinations {
         accent = AeonTopLevelAccent.Focus
     )
 
-    val Insights = AeonTopLevelDestination(
-        destination = InsightsDestination,
-        label = "Insights",
-        shortLabel = "Insight",
-        selectedIcon = Icons.Rounded.Insights,
-        unselectedIcon = Icons.Outlined.Insights,
-        contentDescription = "Personal insights and analytics",
-        accent = AeonTopLevelAccent.Insights
+    val Ledger = AeonTopLevelDestination(
+        destination = LedgerDestination,
+        label = "Ledger",
+        shortLabel = "Ledger",
+        selectedIcon = Icons.Rounded.Payments,
+        unselectedIcon = Icons.Outlined.Payments,
+        contentDescription = "Money you owe and money owed to you",
+        accent = AeonTopLevelAccent.Finance
     )
 
     val Finance = AeonTopLevelDestination(
@@ -131,11 +133,30 @@ object AeonTopLevelDestinations {
         hasNewContent = false
     )
 
+    val Insights = AeonTopLevelDestination(
+        destination = InsightsDestination,
+        label = "Insights",
+        shortLabel = "Insight",
+        selectedIcon = Icons.Rounded.Insights,
+        unselectedIcon = Icons.Outlined.Insights,
+        contentDescription = "Personal insights and analytics",
+        accent = AeonTopLevelAccent.Insights
+    )
+
     val all = listOf(
         Today,
         Track,
         Focus,
-        Insights,
+        Ledger,
+        Finance,
+        Insights
+    )
+
+    val bottomBar = listOf(
+        Today,
+        Track,
+        Focus,
+        Ledger,
         Finance
     )
 }
@@ -223,8 +244,9 @@ fun AeonTopLevelDestination.analyticsName(): String {
         AeonTopLevelDestinations.Today -> "today_tab"
         AeonTopLevelDestinations.Track -> "track_tab"
         AeonTopLevelDestinations.Focus -> "focus_tab"
-        AeonTopLevelDestinations.Insights -> "insights_tab"
+        AeonTopLevelDestinations.Ledger -> "ledger_tab"
         AeonTopLevelDestinations.Finance -> "finance_tab"
+        AeonTopLevelDestinations.Insights -> "insights_tab"
         else -> baseRoute
     }
 }
@@ -235,8 +257,9 @@ fun AeonTopLevelDestination.screenName(): String {
         AeonTopLevelDestinations.Today -> "TodayScreen"
         AeonTopLevelDestinations.Track -> "TrackScreen"
         AeonTopLevelDestinations.Focus -> "FocusScreen"
-        AeonTopLevelDestinations.Insights -> "InsightsScreen"
+        AeonTopLevelDestinations.Ledger -> "LedgerScreen"
         AeonTopLevelDestinations.Finance -> "FinanceScreen"
+        AeonTopLevelDestinations.Insights -> "InsightsScreen"
         else -> title
     }
 }

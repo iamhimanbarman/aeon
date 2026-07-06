@@ -136,6 +136,7 @@ object AeonNavArgs {
     const val MEDICINE_ID = "medicineId"
     const val PROMPT_ID = "promptId"
     const val ENTRY_ID = "entryId"
+    const val COUNTERPARTY_ID = "counterpartyId"
 }
 
 private object AeonRouteBuilder {
@@ -193,6 +194,13 @@ object InsightsDestination : AppDestination {
     override val route: String = "insights"
     override val baseRoute: String = "insights"
     override val title: String = "Insights"
+    override val group: AeonDestinationGroup = AeonDestinationGroup.TopLevel
+}
+
+object LedgerDestination : AppDestination {
+    override val route: String = "ledger"
+    override val baseRoute: String = "ledger"
+    override val title: String = "Ledger"
     override val group: AeonDestinationGroup = AeonDestinationGroup.TopLevel
 }
 
@@ -677,9 +685,21 @@ object FinanceCategoryEditorDestination : AppDestination {
 object FinanceCounterpartyRecordsDestination : AppDestination {
     override val route: String = "finance_counterparty_records"
     override val baseRoute: String = "finance_counterparty_records"
-    override val title: String = "Borrow & Lend"
+    override val title: String = "Ledger"
     override val graph: String = AeonGraphs.FINANCE
     override val group: AeonDestinationGroup = AeonDestinationGroup.Finance
+}
+
+object LedgerCounterpartyDetailDestination : AppDestination {
+    override val route: String = "ledger_counterparty/{${AeonNavArgs.COUNTERPARTY_ID}}"
+    override val baseRoute: String = "ledger_counterparty"
+    override val title: String = "Ledger Account"
+    override val graph: String = AeonGraphs.DETAIL
+    override val group: AeonDestinationGroup = AeonDestinationGroup.Detail
+
+    fun createRoute(counterpartyId: String): String {
+        return AeonRouteBuilder.path(baseRoute, counterpartyId)
+    }
 }
 
 object PrivacySettingsDestination : AppDestination {
@@ -728,8 +748,9 @@ object AeonDestinations {
         TodayDestination,
         TrackDestination,
         FocusDestination,
-        InsightsDestination,
-        FinanceDestination
+        LedgerDestination,
+        FinanceDestination,
+        InsightsDestination
     )
 
     val onboarding: List<AppDestination> = listOf(
@@ -782,6 +803,7 @@ object AeonDestinations {
         GoalMilestoneDestination,
         InsightDomainDestination,
         RecommendationDetailDestination,
+        LedgerCounterpartyDetailDestination,
         AiChatDestination
     )
 

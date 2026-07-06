@@ -29,6 +29,7 @@ import com.aeon.app.data.local.database.entities.BudgetEntity
 import com.aeon.app.data.local.database.entities.FinanceAccountEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryCatalog
 import com.aeon.app.data.local.database.entities.FinanceCategoryEntity
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyEntity
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordEntity
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
 import com.aeon.app.data.local.database.entities.FocusSessionEntity
@@ -110,6 +111,7 @@ import com.aeon.app.data.local.database.entities.TaskSubtaskEntity
         FinanceCategoryEntity::class,
         FinanceTransactionEntity::class,
         BudgetEntity::class,
+        FinanceCounterpartyEntity::class,
         FinanceCounterpartyRecordEntity::class,
 
         // System
@@ -151,7 +153,7 @@ abstract class AeonDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME: String = "aeon_local.db"
-        const val DATABASE_VERSION: Int = 8
+        const val DATABASE_VERSION: Int = 9
 
         @Volatile
         private var INSTANCE: AeonDatabase? = null
@@ -182,7 +184,8 @@ abstract class AeonDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
-                    MIGRATION_7_8
+                    MIGRATION_7_8,
+                    MIGRATION_8_9
                 )
                 .addCallback(AeonDatabaseCallback)
                 .build()
@@ -553,6 +556,78 @@ abstract class AeonDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_finance_counterparty_records_occurred_at " +
                         "ON finance_counterparty_records(occurred_at)"
+                )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS finance_counterparties (
+                        id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        email TEXT,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        deleted_at INTEGER,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_finance_counterparties_name " +
+                        "ON finance_counterparties(name)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_finance_counterparties_email " +
+                        "ON finance_counterparties(email)"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE finance_counterparty_records ADD COLUMN counterparty_id TEXT"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_finance_counterparty_records_counterparty_id " +
+                        "ON finance_counterparty_records(counterparty_id)"
+                )
+
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO finance_counterparties (
+                        id,
+                        name,
+                        email,
+                        created_at,
+                        updated_at,
+                        deleted_at
+                    )
+                    SELECT
+                        'counterparty_' || lower(hex(
+                            lower(trim(counterparty_name)) || '|' || lower(trim(COALESCE(counterparty_email, '')))
+                        )),
+                        trim(counterparty_name),
+                        NULLIF(lower(trim(counterparty_email)), ''),
+                        MIN(created_at),
+                        MAX(updated_at),
+                        NULL
+                    FROM finance_counterparty_records
+                    WHERE deleted_at IS NULL
+                    GROUP BY
+                        lower(trim(counterparty_name)),
+                        lower(trim(COALESCE(counterparty_email, '')))
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    UPDATE finance_counterparty_records
+                    SET counterparty_id = 'counterparty_' || lower(hex(
+                        lower(trim(counterparty_name)) || '|' || lower(trim(COALESCE(counterparty_email, '')))
+                    ))
+                    WHERE counterparty_id IS NULL
+                    AND deleted_at IS NULL
+                    """.trimIndent()
                 )
             }
         }

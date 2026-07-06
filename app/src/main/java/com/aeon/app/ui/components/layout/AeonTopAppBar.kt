@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.HealthAndSafety
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Mood
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Newspaper
@@ -55,6 +56,7 @@ enum class AeonTopBarMenuDestination(
     val icon: ImageVector
 ) {
     Settings("Settings", Icons.Outlined.Settings),
+    Insights("Insight", Icons.Outlined.Insights),
     DailyBrief("Daily brief", Icons.Outlined.Newspaper),
     Goals("Goals", Icons.Outlined.Flag),
     Health("Health", Icons.Outlined.HealthAndSafety),

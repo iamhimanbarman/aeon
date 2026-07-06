@@ -91,7 +91,7 @@ fun AeonBottomNavigation(
     currentRoute: String?,
     onDestinationClick: (AeonTopLevelDestination) -> Unit,
     modifier: Modifier = Modifier,
-    destinations: List<AeonTopLevelDestination> = AeonTopLevelDestinations.all,
+    destinations: List<AeonTopLevelDestination> = AeonTopLevelDestinations.bottomBar,
     style: AeonBottomNavigationStyle = AeonBottomNavigationStyle.Floating,
     showLabels: Boolean = true,
     safeArea: Boolean = true,

@@ -159,6 +159,9 @@ fun AppNavigation(
                         onMenuDestinationClick = { destination ->
                             when (destination) {
                                 AeonTopBarMenuDestination.Settings -> navigationState.navigateToSettings()
+                                AeonTopBarMenuDestination.Insights -> {
+                                    navigationState.navigateToInsights()
+                                }
                                 AeonTopBarMenuDestination.DailyBrief -> {
                                     navigationState.navigateToDestination(DailyBriefDestination)
                                 }
@@ -237,7 +240,7 @@ fun AppNavigation(
                 exit = shellTransitions.bottomBarExit
             ) {
                 AeonBottomNavigation(
-                    currentRoute = currentRoute,
+                    currentRoute = currentRoute.bottomBarSelectionRoute(),
                     style = config.bottomNavigationStyle,
                     safeArea = false,
                     enableHaptics = false,
@@ -430,6 +433,11 @@ class AeonNavigationState(
     }
 
 
+    fun navigateToLedger() {
+        navigateToTopLevelDestination(AeonTopLevelDestinations.Ledger)
+    }
+
+
     fun navigateToInsights() {
         navigateToTopLevelDestination(AeonTopLevelDestinations.Insights)
     }
@@ -529,7 +537,11 @@ class AeonNavigationState(
     }
 
     fun navigateToFinanceCounterpartyRecords() {
-        navigateToRoute(FinanceCounterpartyRecordsDestination.route)
+        navigateToLedger()
+    }
+
+    fun navigateToLedgerCounterparty(counterpartyId: String) {
+        navigateToRoute(LedgerCounterpartyDetailDestination.createRoute(counterpartyId))
     }
 
 
@@ -630,9 +642,17 @@ private fun AeonTopLevelDestination?.shellTopBarTitle(): String? {
         AeonTopLevelDestinations.Today -> "Aeon"
         AeonTopLevelDestinations.Track -> "Track"
         AeonTopLevelDestinations.Focus -> "Focus"
-        AeonTopLevelDestinations.Insights -> "Insight"
+        AeonTopLevelDestinations.Ledger -> "Ledger"
         AeonTopLevelDestinations.Finance -> "Finance"
+        AeonTopLevelDestinations.Insights -> "Insight"
         else -> null
+    }
+}
+
+private fun String?.bottomBarSelectionRoute(): String? {
+    return when (normalizedNavigationRoute()) {
+        InsightsDestination.baseRoute -> TodayDestination.route
+        else -> this
     }
 }
 

@@ -284,6 +284,15 @@ object AeonValidation {
             error("alertThreshold", "Budget alert threshold must be between 0.10 and 1.00.", AeonValidationCode.InvalidRange)
     }
 
+    fun financeCounterparty(
+        name: String,
+        email: String
+    ): AeonValidationResult = buildValidation {
+        requiredText("name", name, min = 2, max = 120)
+        requiredText("email", email, min = 5, max = 160)
+        optionalEmail("email", email)
+    }
+
     fun financeCounterpartyRecord(
         counterpartyName: String,
         direction: String,

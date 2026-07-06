@@ -22,6 +22,7 @@ import com.aeon.app.data.local.database.entities.FinanceCategoryEntity
 import com.aeon.app.data.local.database.entities.FinanceCategoryFamilyStorage
 import com.aeon.app.data.local.database.entities.FinanceCategoryScopeStorage
 import com.aeon.app.data.local.database.entities.FinanceCategoryStorage
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyEntity
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordEntity
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordStatusStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
@@ -1331,8 +1332,22 @@ class FinanceRepository(
         return dao.observeActiveBudgets()
     }
 
+    fun observeCounterparties(): Flow<List<FinanceCounterpartyEntity>> {
+        return dao.observeCounterparties()
+    }
+
+    fun observeCounterparty(counterpartyId: String): Flow<FinanceCounterpartyEntity?> {
+        return dao.observeCounterpartyById(counterpartyId)
+    }
+
     fun observeCounterpartyRecords(): Flow<List<FinanceCounterpartyRecordEntity>> {
         return dao.observeCounterpartyRecords()
+    }
+
+    fun observeCounterpartyRecords(
+        counterpartyId: String
+    ): Flow<List<FinanceCounterpartyRecordEntity>> {
+        return dao.observeCounterpartyRecordsForCounterparty(counterpartyId)
     }
 
     fun observeBudget(id: String): Flow<BudgetEntity?> {
@@ -1577,7 +1592,36 @@ class FinanceRepository(
         return budget
     }
 
+    suspend fun createCounterparty(
+        name: String,
+        email: String
+    ): FinanceCounterpartyEntity {
+        AeonValidation.financeCounterparty(
+            name = name,
+            email = email
+        ).throwIfInvalid()
+
+        val cleanEmail = email.cleanRequired("Counterparty email").lowercase()
+        val existing = dao.getCounterpartyByEmail(cleanEmail)
+        val now = Instant.now()
+        val counterparty = (existing ?: FinanceCounterpartyEntity(
+            id = AeonId.new("counterparty"),
+            name = name.cleanRequired("Counterparty name"),
+            email = cleanEmail,
+            createdAt = now,
+            updatedAt = now
+        )).copy(
+            name = name.cleanRequired("Counterparty name"),
+            email = cleanEmail,
+            updatedAt = now
+        )
+
+        dao.upsertCounterparty(counterparty)
+        return counterparty
+    }
+
     suspend fun createCounterpartyRecord(
+        counterpartyId: String? = null,
         counterpartyName: String,
         direction: String,
         purpose: String,
@@ -1600,6 +1644,7 @@ class FinanceRepository(
         val now = Instant.now()
         val record = FinanceCounterpartyRecordEntity(
             id = AeonId.new("ledger"),
+            counterpartyId = counterpartyId.cleanOptional(),
             counterpartyName = counterpartyName.cleanRequired("Counterparty name"),
             counterpartyEmail = counterpartyEmail.cleanOptional(),
             direction = direction,

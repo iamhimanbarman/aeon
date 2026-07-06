@@ -110,12 +110,15 @@ fun AeonFinanceCounterpartyRecordsRoute(
     val container = currentAeonAppContainer()
     val scope = rememberCoroutineScope()
     val toastHostState = LocalAeonToastHostState.current
+    val remoteClient = remember { FinanceRemoteClient() }
     val counterparties by remember(container) {
         container.repositories.finance.observeCounterparties()
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val records by remember(container) {
         container.repositories.finance.observeCounterpartyRecords()
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val authState by container.authRepository.sessionState.collectAsStateWithLifecycle()
+    val accessToken = (authState as? AuthSessionState.Authenticated)?.session?.accessToken
 
     var showAddUserSheet by rememberSaveable { mutableStateOf(false) }
     var userName by rememberSaveable { mutableStateOf("") }
@@ -170,17 +173,36 @@ fun AeonFinanceCounterpartyRecordsRoute(
 
                     savingUser = true
                     try {
-                        container.repositories.finance.createCounterparty(
+                        val counterparty = container.repositories.finance.createCounterparty(
                             name = cleanName,
                             email = cleanEmail
-                        )
-                        toastHostState.showSuccess(
-                            title = "User saved",
-                            duration = AeonToastDuration.Short
                         )
                         userName = ""
                         userEmail = ""
                         showAddUserSheet = false
+                        toastHostState.showSuccess(
+                            title = "User saved",
+                            duration = AeonToastDuration.Short
+                        )
+
+                        if (!accessToken.isNullOrBlank() && remoteClient.isConfigured()) {
+                            scope.launch {
+                                runCatching {
+                                    remoteClient.syncCounterparty(
+                                        accessToken = accessToken,
+                                        input = FinanceRemoteCounterpartyInput(
+                                            name = counterparty.name,
+                                            email = counterparty.email.orEmpty()
+                                        )
+                                    )
+                                }.onFailure {
+                                    toastHostState.showWarning(
+                                        title = "Cloud sync pending",
+                                        duration = AeonToastDuration.Short
+                                    )
+                                }
+                            }
+                        }
                     } catch (throwable: Throwable) {
                         toastHostState.showError(
                             title = throwable.message.orEmpty().trim().ifBlank { "Save failed" },
@@ -220,10 +242,22 @@ fun AeonFinanceCounterpartyDetailRoute(
     var note by rememberSaveable { mutableStateOf("") }
     var savingEntry by rememberSaveable { mutableStateOf(false) }
     var expandedRecordId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedFilterKey by rememberSaveable { mutableStateOf(LedgerTransactionFilter.All.key) }
+
+    val selectedFilter = remember(selectedFilterKey) {
+        LedgerTransactionFilter.fromKey(selectedFilterKey)
+    }
+    val summary = remember(records) { buildLedgerSummary(records) }
+    val filteredRecords = remember(records, selectedFilter) {
+        records.filter { record -> selectedFilter.matches(record) }
+    }
 
     LedgerCounterpartyDetailScreen(
         counterparty = counterparty,
-        records = records,
+        summary = summary,
+        records = filteredRecords,
+        selectedFilter = selectedFilter,
+        onFilterChange = { selectedFilterKey = it.key },
         expandedRecordId = expandedRecordId,
         onExpandedRecordChange = { expandedRecordId = it },
         onToggleSettled = { record ->
@@ -265,6 +299,7 @@ fun AeonFinanceCounterpartyDetailRoute(
                     val purposeValue = purpose.trim()
                     val noteValue = note.trim().ifBlank { null }
                     val email = currentCounterparty.email?.trim().orEmpty()
+                    val directionValue = direction
 
                     when {
                         amount == null || amount <= BigDecimal.ZERO -> {
@@ -290,63 +325,11 @@ fun AeonFinanceCounterpartyDetailRoute(
                             counterpartyId = currentCounterparty.id,
                             counterpartyName = currentCounterparty.name,
                             counterpartyEmail = currentCounterparty.email,
-                            direction = direction,
+                            direction = directionValue,
                             purpose = purposeValue,
                             amount = amount,
                             note = noteValue
                         )
-
-                        when {
-                            email.isBlank() -> {
-                                toastHostState.showSuccess(
-                                    title = "Entry saved",
-                                    duration = AeonToastDuration.Short
-                                )
-                            }
-
-                            accessToken.isNullOrBlank() -> {
-                                toastHostState.showWarning(
-                                    title = "Saved. Sign in to email",
-                                    duration = AeonToastDuration.Short
-                                )
-                            }
-
-                            !remoteClient.isConfigured() -> {
-                                toastHostState.showWarning(
-                                    title = "Saved locally",
-                                    duration = AeonToastDuration.Short
-                                )
-                            }
-
-                            else -> {
-                                runCatching {
-                                    remoteClient.shareCounterpartyRecord(
-                                        accessToken = accessToken,
-                                        input = FinanceRemoteCounterpartyShareInput(
-                                            counterpartyName = currentCounterparty.name,
-                                            counterpartyEmail = email,
-                                            direction = direction,
-                                            purpose = purposeValue,
-                                            amount = amount.setScale(2, RoundingMode.HALF_UP).toPlainString(),
-                                            currency = "INR",
-                                            note = noteValue,
-                                            occurredAt = record.occurredAt.toString()
-                                        )
-                                    )
-                                }.onSuccess {
-                                    container.repositories.finance.markCounterpartyRecordShared(record.id)
-                                    toastHostState.showSuccess(
-                                        title = "Saved and emailed",
-                                        duration = AeonToastDuration.Short
-                                    )
-                                }.onFailure {
-                                    toastHostState.showWarning(
-                                        title = "Saved. Email failed",
-                                        duration = AeonToastDuration.Short
-                                    )
-                                }
-                            }
-                        }
 
                         amountText = ""
                         purpose = ""
@@ -354,6 +337,61 @@ fun AeonFinanceCounterpartyDetailRoute(
                         direction = FinanceCounterpartyDirectionStorage.OwedToMe
                         expandedRecordId = record.id
                         showAddEntrySheet = false
+                        toastHostState.showSuccess(
+                            title = "Entry saved",
+                            duration = AeonToastDuration.Short
+                        )
+
+                        when {
+                            email.isBlank() -> Unit
+                            accessToken.isNullOrBlank() -> {
+                                toastHostState.showWarning(
+                                    title = "Email pending",
+                                    duration = AeonToastDuration.Short
+                                )
+                            }
+
+                            !remoteClient.isConfigured() -> {
+                                toastHostState.showWarning(
+                                    title = "Cloud sync off",
+                                    duration = AeonToastDuration.Short
+                                )
+                            }
+
+                            else -> {
+                                scope.launch {
+                                    runCatching {
+                                        remoteClient.syncCounterpartyRecord(
+                                            accessToken = accessToken,
+                                            input = FinanceRemoteCounterpartyShareInput(
+                                                counterpartyName = currentCounterparty.name,
+                                                counterpartyEmail = email,
+                                                direction = directionValue,
+                                                purpose = purposeValue,
+                                                amount = amount.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                                                currency = "INR",
+                                                note = noteValue,
+                                                occurredAt = record.occurredAt.toString()
+                                            )
+                                        )
+                                    }.onSuccess { response ->
+                                        if (response.optBoolean("emailed", false)) {
+                                            container.repositories.finance.markCounterpartyRecordShared(record.id)
+                                        } else {
+                                            toastHostState.showWarning(
+                                                title = "Email failed",
+                                                duration = AeonToastDuration.Short
+                                            )
+                                        }
+                                    }.onFailure {
+                                        toastHostState.showWarning(
+                                            title = "Email failed",
+                                            duration = AeonToastDuration.Short
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     } catch (throwable: Throwable) {
                         toastHostState.showError(
                             title = throwable.message.orEmpty().trim().ifBlank { "Save failed" },
@@ -387,6 +425,31 @@ private data class LedgerCounterpartySummary(
     val openCount: Int,
     val settledCount: Int
 )
+
+private enum class LedgerTransactionFilter(
+    val key: String,
+    val label: String
+) {
+    All("all", "All"),
+    Lend("lend", "Lend"),
+    Borrow("borrow", "Borrow");
+
+    fun matches(
+        record: FinanceCounterpartyRecordEntity
+    ): Boolean {
+        return when (this) {
+            All -> true
+            Lend -> record.direction == FinanceCounterpartyDirectionStorage.OwedToMe
+            Borrow -> record.direction == FinanceCounterpartyDirectionStorage.IOwe
+        }
+    }
+
+    companion object {
+        fun fromKey(key: String?): LedgerTransactionFilter {
+            return values().firstOrNull { filter -> filter.key == key } ?: All
+        }
+    }
+}
 
 @Composable
 private fun LedgerCounterpartyListScreen(
@@ -448,7 +511,10 @@ private fun LedgerCounterpartyListScreen(
 @Composable
 private fun LedgerCounterpartyDetailScreen(
     counterparty: FinanceCounterpartyEntity?,
+    summary: LedgerCounterpartySummary,
     records: List<FinanceCounterpartyRecordEntity>,
+    selectedFilter: LedgerTransactionFilter,
+    onFilterChange: (LedgerTransactionFilter) -> Unit,
     expandedRecordId: String?,
     onExpandedRecordChange: (String?) -> Unit,
     onToggleSettled: (FinanceCounterpartyRecordEntity) -> Unit,
@@ -478,14 +544,37 @@ private fun LedgerCounterpartyDetailScreen(
                 return@AeonScreen
             }
 
-            val summary = remember(records) { buildLedgerSummary(records) }
+            Text(
+                text = currentCounterparty.name,
+                style = AeonTextStyles.SectionTitle.copy(
+                    color = AeonThemeTokens.colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            if (!currentCounterparty.email.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = currentCounterparty.email,
+                    style = AeonTextStyles.Caption.copy(
+                        color = AeonThemeTokens.colors.textSecondary
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             LedgerCounterpartyHeroCard(
                 counterparty = currentCounterparty,
                 summary = summary
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
                 text = "Transactions",
@@ -497,6 +586,17 @@ private fun LedgerCounterpartyDetailScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            LedgerTransactionFilterRow(
+                selectedFilter = selectedFilter,
+                onFilterChange = onFilterChange
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LedgerTransactionTableHeader()
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             if (records.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -505,8 +605,12 @@ private fun LedgerCounterpartyDetailScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     AeonNoDataState(
-                        title = "No entries yet",
-                        message = "Add a borrow or lend entry for this user. Aeon will keep the full account here."
+                        title = when (selectedFilter) {
+                            LedgerTransactionFilter.All -> "No entries yet"
+                            LedgerTransactionFilter.Lend -> "No lend records"
+                            LedgerTransactionFilter.Borrow -> "No borrow records"
+                        },
+                        message = "Add an entry for this user. Aeon will keep the full account here."
                     )
                 }
             } else {
@@ -514,7 +618,7 @@ private fun LedgerCounterpartyDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
                     items(
@@ -673,22 +777,20 @@ private fun LedgerCounterpartyHeroCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = counterparty.name,
-                    style = AeonTextStyles.SectionTitle.copy(
+                    text = "Account summary",
+                    style = AeonTextStyles.CardTitle.copy(
                         color = colors.textPrimary,
                         fontWeight = FontWeight.Bold
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (!counterparty.email.isNullOrBlank()) {
-                    Text(
-                        text = counterparty.email,
-                        style = AeonTextStyles.Caption.copy(color = colors.textSecondary),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(
+                    text = counterparty.email.orEmpty().ifBlank { "Private local ledger" },
+                    style = AeonTextStyles.Caption.copy(color = colors.textSecondary),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
 
@@ -700,13 +802,13 @@ private fun LedgerCounterpartyHeroCard(
         ) {
             LedgerSummaryCard(
                 modifier = Modifier.weight(1f),
-                title = "Receive",
+                title = "Lend",
                 value = summary.receive.toCurrencyLabel(),
                 accent = colors.premiumGold
             )
             LedgerSummaryCard(
                 modifier = Modifier.weight(1f),
-                title = "You owe",
+                title = "Borrow",
                 value = summary.pay.toCurrencyLabel(),
                 accent = colors.brand
             )
@@ -772,6 +874,134 @@ private fun LedgerSummaryCard(
             style = AeonTextStyles.CardTitle.copy(
                 color = accent,
                 fontWeight = FontWeight.Bold
+            ),
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun LedgerTransactionFilterRow(
+    selectedFilter: LedgerTransactionFilter,
+    onFilterChange: (LedgerTransactionFilter) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        LedgerTransactionFilterChip(
+            modifier = Modifier.weight(1f),
+            filter = LedgerTransactionFilter.All,
+            selected = selectedFilter == LedgerTransactionFilter.All,
+            onClick = { onFilterChange(LedgerTransactionFilter.All) }
+        )
+        LedgerTransactionFilterChip(
+            modifier = Modifier.weight(1f),
+            filter = LedgerTransactionFilter.Lend,
+            selected = selectedFilter == LedgerTransactionFilter.Lend,
+            onClick = { onFilterChange(LedgerTransactionFilter.Lend) }
+        )
+        LedgerTransactionFilterChip(
+            modifier = Modifier.weight(1f),
+            filter = LedgerTransactionFilter.Borrow,
+            selected = selectedFilter == LedgerTransactionFilter.Borrow,
+            onClick = { onFilterChange(LedgerTransactionFilter.Borrow) }
+        )
+    }
+}
+
+@Composable
+private fun LedgerTransactionFilterChip(
+    modifier: Modifier = Modifier,
+    filter: LedgerTransactionFilter,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = AeonThemeTokens.colors
+    val accent = when (filter) {
+        LedgerTransactionFilter.All -> colors.textSecondary
+        LedgerTransactionFilter.Lend -> colors.premiumGold
+        LedgerTransactionFilter.Borrow -> colors.brand
+    }
+
+    Surface(
+        modifier = modifier,
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (selected) accent.copy(alpha = 0.15f) else colors.surfaceMuted,
+        border = BorderStroke(
+            1.dp,
+            if (selected) accent.copy(alpha = 0.34f) else colors.borderSoft
+        )
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = filter.label,
+                style = AeonTextStyles.Caption.copy(
+                    color = if (selected) colors.textPrimary else colors.textSecondary,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun LedgerTransactionTableHeader() {
+    val colors = AeonThemeTokens.colors
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = colors.surfaceMuted,
+        border = BorderStroke(1.dp, colors.borderSoft)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            LedgerHeaderCell(
+                text = "Date",
+                modifier = Modifier.width(64.dp)
+            )
+            LedgerHeaderCell(
+                text = "Type",
+                modifier = Modifier.width(66.dp)
+            )
+            LedgerHeaderCell(
+                text = "Amount",
+                modifier = Modifier.width(88.dp),
+                alignEnd = true
+            )
+            LedgerHeaderCell(
+                text = "Purpose",
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LedgerHeaderCell(
+    text: String,
+    modifier: Modifier = Modifier,
+    alignEnd: Boolean = false
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = if (alignEnd) Alignment.CenterEnd else Alignment.CenterStart
+    ) {
+        Text(
+            text = text,
+            style = AeonTextStyles.Micro.copy(
+                color = AeonThemeTokens.colors.textTertiary,
+                fontWeight = FontWeight.SemiBold
             ),
             maxLines = 1
         )
@@ -1063,7 +1293,7 @@ private fun LedgerCounterpartyRecordBar(
     onToggleSettled: () -> Unit
 ) {
     val colors = AeonThemeTokens.colors
-    val accent = record.accentColor()
+    val accent = record.directionAccentColor()
 
     Surface(
         modifier = Modifier
@@ -1075,85 +1305,80 @@ private fun LedgerCounterpartyRecordBar(
                 )
             ),
         onClick = onToggleExpanded,
-        shape = RoundedCornerShape(28.dp),
-        color = colors.surfaceElevated,
+        shape = RoundedCornerShape(24.dp),
+        color = accent.copy(alpha = if (expanded) 0.11f else 0.08f),
         border = BorderStroke(
             width = 1.dp,
-            color = accent.copy(alpha = if (record.status == FinanceCounterpartyRecordStatusStorage.Open) 0.26f else 0.14f)
+            color = accent.copy(alpha = if (expanded) 0.32f else 0.18f)
         )
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    modifier = Modifier.size(40.dp),
-                    shape = CircleShape,
-                    color = accent.copy(alpha = 0.14f),
-                    contentColor = accent
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (record.direction == FinanceCounterpartyDirectionStorage.OwedToMe) {
-                                Icons.Outlined.CallReceived
-                            } else {
-                                Icons.Outlined.ArrowOutward
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                Box(
+                    modifier = Modifier.width(64.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
                     Text(
-                        text = record.purpose,
-                        modifier = Modifier.basicMarquee(
-                            iterations = Int.MAX_VALUE,
-                            repeatDelayMillis = 1_400,
-                            animationMode = MarqueeAnimationMode.Immediately
-                        ),
-                        style = AeonTextStyles.CardTitle.copy(
+                        text = record.occurredAt.toFinanceLedgerDateLabel(),
+                        style = AeonTextStyles.Caption.copy(
                             color = colors.textPrimary,
                             fontWeight = FontWeight.SemiBold
                         ),
                         maxLines = 1
                     )
+                }
+
+                Box(
+                    modifier = Modifier.width(66.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
                     Text(
-                        text = record.occurredAt.toFinanceLedgerTimeLabel(),
-                        style = AeonTextStyles.Caption.copy(color = colors.textSecondary),
+                        text = record.directionTypeLabel(),
+                        style = AeonTextStyles.Caption.copy(
+                            color = accent,
+                            fontWeight = FontWeight.SemiBold
+                        ),
                         maxLines = 1
                     )
                 }
 
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                Box(
+                    modifier = Modifier.width(88.dp),
+                    contentAlignment = Alignment.CenterEnd
                 ) {
                     Text(
                         text = record.amount.toCurrencyLabel(record.currency),
-                        style = AeonTextStyles.CardTitle.copy(
+                        style = AeonTextStyles.Caption.copy(
                             color = accent,
                             fontWeight = FontWeight.Bold
                         ),
                         maxLines = 1
                     )
+                }
+
+                Box(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (record.direction == FinanceCounterpartyDirectionStorage.OwedToMe) {
-                            "Lend"
-                        } else {
-                            "Borrow"
-                        },
-                        style = AeonTextStyles.Micro.copy(color = accent),
-                        maxLines = 1
+                        text = record.purpose,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .basicMarquee(
+                                iterations = Int.MAX_VALUE,
+                                repeatDelayMillis = 1_400,
+                                animationMode = MarqueeAnimationMode.Immediately
+                            ),
+                        style = AeonTextStyles.Caption.copy(
+                            color = colors.textPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip
                     )
                 }
             }
@@ -1231,10 +1456,24 @@ private fun LedgerCounterpartyRecordBar(
                         )
                     }
 
+                    LedgerExpandedDetailRow(
+                        label = "Time",
+                        value = record.occurredAt.toFinanceLedgerTimeLabel()
+                    )
+                    LedgerExpandedDetailRow(
+                        label = "Amount",
+                        value = record.amount.toCurrencyLabel(record.currency)
+                    )
+                    if (!record.counterpartyEmail.isNullOrBlank()) {
+                        LedgerExpandedDetailRow(
+                            label = "Email",
+                            value = record.counterpartyEmail
+                        )
+                    }
                     if (!record.note.isNullOrBlank()) {
-                        Text(
-                            text = record.note,
-                            style = AeonTextStyles.CardSubtitle.copy(color = colors.textPrimary)
+                        LedgerExpandedDetailRow(
+                            label = "Note",
+                            value = record.note
                         )
                     }
 
@@ -1260,6 +1499,30 @@ private fun LedgerCounterpartyRecordBar(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LedgerExpandedDetailRow(
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.width(62.dp),
+            style = AeonTextStyles.Micro.copy(color = AeonThemeTokens.colors.textTertiary),
+            maxLines = 1
+        )
+        Text(
+            text = value,
+            modifier = Modifier.weight(1f),
+            style = AeonTextStyles.Caption.copy(color = AeonThemeTokens.colors.textPrimary)
+        )
     }
 }
 
@@ -1349,12 +1612,20 @@ private fun LedgerCounterpartyListItem.balanceLabel(): String {
 }
 
 @Composable
-private fun FinanceCounterpartyRecordEntity.accentColor(): Color {
+private fun FinanceCounterpartyRecordEntity.directionAccentColor(): Color {
     val colors = AeonThemeTokens.colors
-    return when {
-        status == FinanceCounterpartyRecordStatusStorage.Settled -> colors.textSecondary
-        direction == FinanceCounterpartyDirectionStorage.OwedToMe -> colors.premiumGold
-        else -> colors.brand
+    return if (direction == FinanceCounterpartyDirectionStorage.OwedToMe) {
+        colors.premiumGold
+    } else {
+        colors.brand
+    }
+}
+
+private fun FinanceCounterpartyRecordEntity.directionTypeLabel(): String {
+    return if (direction == FinanceCounterpartyDirectionStorage.OwedToMe) {
+        "Lend"
+    } else {
+        "Borrow"
     }
 }
 
@@ -1367,4 +1638,9 @@ private fun BigDecimal.toCurrencyLabel(currency: String = "INR"): String {
 private fun Instant.toFinanceLedgerTimeLabel(): String {
     return atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.getDefault()))
+}
+
+private fun Instant.toFinanceLedgerDateLabel(): String {
+    return atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
 }

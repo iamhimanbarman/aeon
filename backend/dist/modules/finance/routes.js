@@ -1,8 +1,8 @@
 import { sendFinanceCounterpartyEmail } from "../../email/email.service.js";
 import { parseMonthKey } from "../../lib/dates.js";
 import { parseWithSchema } from "../../lib/validation.js";
-import { archiveFinanceAccount, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCategory, deleteFinanceTransaction, getFinanceOverview, getFinanceTransaction, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceTransactionMonths, listFinanceTransactions, setFinanceBudgetsForMonth } from "./repository.js";
-import { financeAccountInputSchema, financeBudgetQuerySchema, financeCounterpartyShareInputSchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
+import { archiveFinanceAccount, createFinanceCounterpartyRecord, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCategory, deleteFinanceTransaction, getFinanceOverview, getFinanceTransaction, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceTransactionMonths, listFinanceTransactions, markFinanceCounterpartyRecordShared, upsertFinanceCounterparty, setFinanceBudgetsForMonth } from "./repository.js";
+import { financeAccountInputSchema, financeBudgetQuerySchema, financeCounterpartyInputSchema, financeCounterpartyRecordInputSchema, financeCounterpartyShareInputSchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
 export async function registerFinanceRoutes(app) {
     app.get("/categories", { preHandler: app.authenticate }, async (request) => {
         return listFinanceCategories(app.db, request.authUser.userId);
@@ -56,6 +56,53 @@ export async function registerFinanceRoutes(app) {
     app.get("/overview/:month", { preHandler: app.authenticate }, async (request) => {
         const month = parseMonthKey(request.params.month).monthKey;
         return getFinanceOverview(app.db, request.authUser.userId, month);
+    });
+    app.post("/counterparties", { preHandler: app.authenticate }, async (request) => {
+        const body = parseWithSchema(financeCounterpartyInputSchema, request.body, "Invalid finance counterparty payload.");
+        return upsertFinanceCounterparty(app.db, request.authUser.userId, body);
+    });
+    app.post("/counterparty-records", { preHandler: app.authenticate }, async (request) => {
+        const body = parseWithSchema(financeCounterpartyRecordInputSchema, request.body, "Invalid finance counterparty record payload.");
+        const ownerName = request.authUser?.displayName
+            ?? request.authUser?.email
+            ?? "An Aeon user";
+        const result = await createFinanceCounterpartyRecord(app.db, request.authUser.userId, body);
+        let emailed = false;
+        let emailSharedAt = null;
+        try {
+            await sendFinanceCounterpartyEmail({
+                recipientEmail: body.counterpartyEmail,
+                recipientName: body.counterpartyName,
+                ownerName,
+                ownerEmail: request.authUser?.email,
+                direction: body.direction,
+                purpose: body.purpose,
+                amount: body.amount,
+                currency: body.currency,
+                occurredAt: body.occurredAt,
+                note: body.note
+            });
+            emailed = true;
+            emailSharedAt = new Date().toISOString();
+            await markFinanceCounterpartyRecordShared(app.db, request.authUser.userId, result.recordId, emailSharedAt);
+        }
+        catch (error) {
+            app.log.warn({
+                err: error,
+                userId: request.authUser.userId,
+                recordId: result.recordId
+            }, "finance_counterparty_email_failed");
+        }
+        return {
+            ok: true,
+            emailed,
+            emailSharedAt,
+            counterparty: result.counterparty,
+            record: {
+                ...result.record,
+                emailSharedAt
+            }
+        };
     });
     app.post("/counterparty-share", { preHandler: app.authenticate }, async (request) => {
         const body = parseWithSchema(financeCounterpartyShareInputSchema, request.body, "Invalid finance account-share payload.");

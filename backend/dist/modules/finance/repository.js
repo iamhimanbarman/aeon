@@ -382,6 +382,86 @@ export async function getFinanceOverview(db, userId, monthKey) {
         left: (budget - spent).toFixed(2)
     };
 }
+export async function upsertFinanceCounterparty(db, userId, input) {
+    const now = new Date().toISOString();
+    const email = input.email.trim().toLowerCase();
+    const name = input.name.trim();
+    const rows = await db `
+    with updated as (
+      update finance_counterparties
+      set name = ${name},
+          email = ${email},
+          updated_at = ${now}::timestamptz,
+          deleted_at = null
+      where user_id = ${userId}::uuid
+        and lower(email) = lower(${email})
+      returning *
+    ),
+    inserted as (
+      insert into finance_counterparties (
+        user_id, id, name, email, created_at, updated_at
+      )
+      select
+        ${userId}::uuid,
+        ${buildPrefixedId("counterparty")},
+        ${name},
+        ${email},
+        ${now}::timestamptz,
+        ${now}::timestamptz
+      where not exists (select 1 from updated)
+      returning *
+    )
+    select * from updated
+    union all
+    select * from inserted
+    limit 1
+  `;
+    return camelizeRecord(rows[0] ?? {});
+}
+export async function createFinanceCounterpartyRecord(db, userId, input) {
+    const counterparty = await upsertFinanceCounterparty(db, userId, {
+        name: input.counterpartyName,
+        email: input.counterpartyEmail
+    });
+    const now = new Date().toISOString();
+    const recordId = buildPrefixedId("ledger");
+    const rows = await db `
+    insert into finance_counterparty_records (
+      user_id, id, counterparty_id, direction, purpose, note, amount, currency, status,
+      email_shared_at, occurred_at, created_at, updated_at
+    )
+    values (
+      ${userId}::uuid,
+      ${recordId},
+      ${String(counterparty.id ?? "")},
+      ${input.direction},
+      ${input.purpose},
+      ${input.note ?? null},
+      ${input.amount},
+      ${input.currency},
+      'open',
+      null,
+      ${input.occurredAt}::timestamptz,
+      ${now}::timestamptz,
+      ${now}::timestamptz
+    )
+    returning *
+  `;
+    return {
+        counterparty,
+        record: camelizeRecord(rows[0] ?? {}),
+        recordId
+    };
+}
+export async function markFinanceCounterpartyRecordShared(db, userId, recordId, emailSharedAt = new Date().toISOString()) {
+    await db `
+    update finance_counterparty_records
+    set email_shared_at = ${emailSharedAt}::timestamptz,
+        updated_at = now()
+    where user_id = ${userId}::uuid
+      and id = ${recordId}
+  `;
+}
 async function recalculateAccountBalances(db, userId, accountIds) {
     const values = [userId];
     let filter = "";

@@ -8,6 +8,8 @@ import { ensureFinanceDefaults } from "../bootstrap/service.js";
 import type {
   financeAccountInputSchema,
   financeBudgetQuerySchema,
+  financeCounterpartyInputSchema,
+  financeCounterpartyRecordInputSchema,
   financeCategoryInputSchema,
   financeSetMonthBudgetSchema,
   financeTransactionInputSchema,
@@ -22,6 +24,8 @@ type FinanceSetMonthBudgetInput = z.infer<typeof financeSetMonthBudgetSchema>;
 type FinanceTransactionMonthsQuery = z.infer<typeof financeTransactionMonthsQuerySchema>;
 type FinanceTransactionQuery = z.infer<typeof financeTransactionQuerySchema>;
 type FinanceBudgetQuery = z.infer<typeof financeBudgetQuerySchema>;
+type FinanceCounterpartyInput = z.infer<typeof financeCounterpartyInputSchema>;
+type FinanceCounterpartyRecordInput = z.infer<typeof financeCounterpartyRecordInputSchema>;
 
 export async function listFinanceCategories(db: Sql<Record<string, unknown>>, userId: string) {
   await ensureFinanceDefaults(db, userId);
@@ -497,6 +501,106 @@ export async function getFinanceOverview(db: Sql<Record<string, unknown>>, userI
     entries: entryRows[0]?.count ?? 0,
     left: (budget - spent).toFixed(2)
   };
+}
+
+export async function upsertFinanceCounterparty(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  input: FinanceCounterpartyInput
+) {
+  const now = new Date().toISOString();
+  const email = input.email.trim().toLowerCase();
+  const name = input.name.trim();
+
+  const rows = await db<Record<string, unknown>[]>`
+    with updated as (
+      update finance_counterparties
+      set name = ${name},
+          email = ${email},
+          updated_at = ${now}::timestamptz,
+          deleted_at = null
+      where user_id = ${userId}::uuid
+        and lower(email) = lower(${email})
+      returning *
+    ),
+    inserted as (
+      insert into finance_counterparties (
+        user_id, id, name, email, created_at, updated_at
+      )
+      select
+        ${userId}::uuid,
+        ${buildPrefixedId("counterparty")},
+        ${name},
+        ${email},
+        ${now}::timestamptz,
+        ${now}::timestamptz
+      where not exists (select 1 from updated)
+      returning *
+    )
+    select * from updated
+    union all
+    select * from inserted
+    limit 1
+  `;
+
+  return camelizeRecord(rows[0] ?? {});
+}
+
+export async function createFinanceCounterpartyRecord(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  input: FinanceCounterpartyRecordInput
+) {
+  const counterparty = await upsertFinanceCounterparty(db, userId, {
+    name: input.counterpartyName,
+    email: input.counterpartyEmail
+  });
+  const now = new Date().toISOString();
+  const recordId = buildPrefixedId("ledger");
+
+  const rows = await db<Record<string, unknown>[]>`
+    insert into finance_counterparty_records (
+      user_id, id, counterparty_id, direction, purpose, note, amount, currency, status,
+      email_shared_at, occurred_at, created_at, updated_at
+    )
+    values (
+      ${userId}::uuid,
+      ${recordId},
+      ${String(counterparty.id ?? "")},
+      ${input.direction},
+      ${input.purpose},
+      ${input.note ?? null},
+      ${input.amount},
+      ${input.currency},
+      'open',
+      null,
+      ${input.occurredAt}::timestamptz,
+      ${now}::timestamptz,
+      ${now}::timestamptz
+    )
+    returning *
+  `;
+
+  return {
+    counterparty,
+    record: camelizeRecord(rows[0] ?? {}),
+    recordId
+  };
+}
+
+export async function markFinanceCounterpartyRecordShared(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  recordId: string,
+  emailSharedAt: string = new Date().toISOString()
+) {
+  await db`
+    update finance_counterparty_records
+    set email_shared_at = ${emailSharedAt}::timestamptz,
+        updated_at = now()
+    where user_id = ${userId}::uuid
+      and id = ${recordId}
+  `;
 }
 
 async function recalculateAccountBalances(

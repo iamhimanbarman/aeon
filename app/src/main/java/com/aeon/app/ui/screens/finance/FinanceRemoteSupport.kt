@@ -27,6 +27,11 @@ internal data class FinanceRemoteTransactionQuery(
     val limit: Int = 300
 )
 
+internal data class FinanceRemoteCounterpartyInput(
+    val name: String,
+    val email: String
+)
+
 internal data class FinanceRemoteCounterpartyShareInput(
     val counterpartyName: String,
     val counterpartyEmail: String,
@@ -125,6 +130,57 @@ internal class FinanceRemoteClient(
         executeJsonObject(
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparty-share", emptyMap()))
+                .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
+                .post(
+                    payload.toString()
+                        .toRequestBody("application/json; charset=utf-8".toMediaType())
+                )
+                .build()
+        )
+    }
+
+    suspend fun syncCounterparty(
+        accessToken: String,
+        input: FinanceRemoteCounterpartyInput
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("name", input.name)
+            .put("email", input.email)
+
+        executeJsonObject(
+            Request.Builder()
+                .url(buildUrl("/v1/finance/counterparties", emptyMap()))
+                .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
+                .post(
+                    payload.toString()
+                        .toRequestBody("application/json; charset=utf-8".toMediaType())
+                )
+                .build()
+        )
+    }
+
+    suspend fun syncCounterpartyRecord(
+        accessToken: String,
+        input: FinanceRemoteCounterpartyShareInput
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("counterpartyName", input.counterpartyName)
+            .put("counterpartyEmail", input.counterpartyEmail)
+            .put("direction", input.direction)
+            .put("purpose", input.purpose)
+            .put("amount", input.amount)
+            .put("currency", input.currency)
+            .put("occurredAt", input.occurredAt)
+
+        input.note?.takeIf(String::isNotBlank)?.let { note ->
+            payload.put("note", note)
+        }
+
+        executeJsonObject(
+            Request.Builder()
+                .url(buildUrl("/v1/finance/counterparty-records", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
                 .header("Accept", "application/json")
                 .post(

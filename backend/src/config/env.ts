@@ -1,6 +1,19 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const optionalUrlEnv = z
+  .string()
+  .trim()
+  .optional()
+  .transform((value) => value && value.length > 0 ? value : undefined)
+  .pipe(z.string().url().optional());
+
+const optionalSecretEnv = z
+  .string()
+  .trim()
+  .optional()
+  .transform((value) => value && value.length > 0 ? value : undefined);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().min(1).default("0.0.0.0"),
@@ -10,7 +23,7 @@ const envSchema = z.object({
     .default("info"),
   CORS_ORIGIN: z.string().min(1).default("*"),
   DATABASE_URL: z.string().url(),
-  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_URL: optionalUrlEnv,
   SUPABASE_JWT_AUDIENCE: z.string().min(1).default("authenticated"),
   AUTH_JWT_SECRET: z.string().min(32),
   AUTH_JWT_ISSUER: z.string().min(1).default("aeon-backend"),
@@ -25,9 +38,9 @@ const envSchema = z.object({
   AUTH_ALLOWED_MOBILE_REDIRECT_URIS: z.string().min(1).default("aeon://auth/callback"),
   AUTH_EMAIL_FROM: z.string().min(1),
   RESEND_API_KEY: z.string().min(1),
-  GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
-  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
-  GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  GOOGLE_OAUTH_CLIENT_ID: optionalSecretEnv,
+  GOOGLE_OAUTH_CLIENT_SECRET: optionalSecretEnv,
+  GOOGLE_OAUTH_REDIRECT_URI: optionalUrlEnv,
   DEFAULT_TIMEZONE: z.string().min(1).default("Asia/Calcutta"),
   DEFAULT_CURRENCY: z.string().length(3).default("INR"),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),

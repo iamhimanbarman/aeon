@@ -111,6 +111,58 @@ npm run db:migrate
 npm run dev
 ```
 
+## Render Free Keep-Alive Setup
+
+After deployment, open this URL in your browser:
+
+`https://YOUR_RENDER_BACKEND_URL.onrender.com/api/health`
+
+Expected response:
+
+```json
+{
+  "ok": true,
+  "service": "aeon-backend",
+  "status": "healthy"
+}
+```
+
+Route summary:
+
+- `GET /api/health`: public shallow health route for Render free keep-alive monitors
+- `HEAD /api/health`: lightweight public probe with no response body
+- `GET /api/health/deep`: public dependency-aware health route for manual diagnostics
+- `GET /health/live`: legacy lightweight liveness route kept for compatibility
+- `GET /health/ready`: legacy readiness route kept for compatibility and database-aware checks
+
+Important behavior:
+
+- `/api/health` does not touch the database, external APIs, Google OAuth, Resend, or file storage
+- `/api/health/deep` performs a minimal database probe with `select 1`
+- Redis is not part of the current Aeon backend, so `/api/health/deep` reports `redis: false` without failing the response
+- health routes are public and do not require authentication
+- health routes use quieter route logging to avoid noisy request logs from external monitors
+
+Environment reference values:
+
+- `BACKEND_PUBLIC_URL=https://YOUR_RENDER_BACKEND_URL.onrender.com`
+- `HEALTH_CHECK_PATH=/api/health`
+
+Then create an external monitor:
+
+Option A: UptimeRobot
+
+- Monitor Type: HTTP(s)
+- Friendly Name: Aeon Backend Keep Alive
+- URL: `https://YOUR_RENDER_BACKEND_URL.onrender.com/api/health`
+- Interval: 5 minutes
+
+Option B: cron-job.org
+
+- URL: `https://YOUR_RENDER_BACKEND_URL.onrender.com/api/health`
+- Method: GET
+- Schedule: every 5 minutes
+
 ## API Surface
 
 ### Tasks

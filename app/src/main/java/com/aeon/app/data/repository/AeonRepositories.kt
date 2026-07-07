@@ -1791,6 +1791,51 @@ class FinanceRepository(
         return record
     }
 
+    suspend fun updateCounterpartyRecord(
+        recordId: String,
+        counterpartyId: String? = null,
+        counterpartyName: String,
+        direction: String,
+        purpose: String,
+        amount: BigDecimal,
+        currency: String = "INR",
+        counterpartyEmail: String? = null,
+        note: String? = null,
+        occurredAt: Instant
+    ): FinanceCounterpartyRecordEntity {
+        AeonValidation.financeCounterpartyRecord(
+            counterpartyName = counterpartyName,
+            direction = direction,
+            purpose = purpose,
+            amount = amount,
+            currency = currency,
+            counterpartyEmail = counterpartyEmail,
+            note = note
+        ).throwIfInvalid()
+
+        val existing = dao.getCounterpartyRecordById(recordId)
+            ?: error("Ledger record not found.")
+        val updated = existing.copy(
+            counterpartyId = counterpartyId.cleanOptional(),
+            counterpartyName = counterpartyName.cleanRequired("Counterparty name"),
+            counterpartyEmail = counterpartyEmail.cleanOptional(),
+            direction = direction,
+            purpose = purpose.cleanRequired("Purpose"),
+            note = note.cleanOptional(),
+            amount = amount.safeMoney(),
+            currency = currency.ifBlank { "INR" },
+            occurredAt = occurredAt,
+            updatedAt = Instant.now()
+        )
+        dao.upsertCounterpartyRecord(updated)
+        sync.safeQueueUpdate(
+            SyncEntityTypes.FinanceCounterpartyRecords,
+            updated.id,
+            updated.toSyncPayloadJson()
+        )
+        return updated
+    }
+
     suspend fun replaceBudgetsForMonth(
         periodStart: LocalDate,
         periodEnd: LocalDate,
@@ -1893,7 +1938,9 @@ class FinanceRepository(
     suspend fun setCounterpartyRecordSettled(
         recordId: String,
         settled: Boolean
-    ) {
+    ): FinanceCounterpartyRecordEntity {
+        val existing = dao.getCounterpartyRecordById(recordId)
+            ?: error("Ledger record not found.")
         val now = Instant.now()
         dao.updateCounterpartyRecordStatus(
             recordId = recordId,
@@ -1905,6 +1952,26 @@ class FinanceRepository(
             settledAt = if (settled) now else null,
             updatedAt = now
         )
+        val updated = existing.copy(
+            status = if (settled) {
+                FinanceCounterpartyRecordStatusStorage.Settled
+            } else {
+                FinanceCounterpartyRecordStatusStorage.Open
+            },
+            settledAt = if (settled) now else null,
+            updatedAt = now
+        )
+        sync.safeQueueUpdate(
+            SyncEntityTypes.FinanceCounterpartyRecords,
+            updated.id,
+            updated.toSyncPayloadJson()
+        )
+        return updated
+    }
+
+    suspend fun deleteCounterpartyRecord(recordId: String) {
+        dao.softDeleteCounterpartyRecord(recordId)
+        sync.safeQueueDelete(SyncEntityTypes.FinanceCounterpartyRecords, recordId)
     }
 
     suspend fun markCounterpartyRecordShared(

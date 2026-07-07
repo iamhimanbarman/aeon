@@ -181,17 +181,11 @@ abstract class AeonDatabase : RoomDatabase() {
         fun buildDatabase(
             context: Context
         ): AeonDatabase {
-            return Room.databaseBuilder(
+            val builder = Room.databaseBuilder(
                 context.applicationContext,
                 AeonDatabase::class.java,
                 DATABASE_NAME
             )
-                .openHelperFactory(
-                    AeonDatabaseEncryption.createSupportFactory(
-                        context = context.applicationContext,
-                        databaseName = DATABASE_NAME
-                    )
-                )
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .addMigrations(
                     MIGRATION_1_2,
@@ -207,7 +201,13 @@ abstract class AeonDatabase : RoomDatabase() {
                     MIGRATION_11_12
                 )
                 .addCallback(AeonDatabaseCallback)
-                .build()
+
+            AeonDatabaseEncryption.createSupportFactoryOrNull(
+                context = context.applicationContext,
+                databaseName = DATABASE_NAME
+            )?.let(builder::openHelperFactory)
+
+            return builder.build()
         }
 
         fun buildInMemoryDatabase(

@@ -1406,6 +1406,16 @@ interface FinanceDao {
 
     @Query(
         """
+        SELECT * FROM finance_counterparty_records
+        WHERE id = :recordId
+        AND deleted_at IS NULL
+        LIMIT 1
+        """
+    )
+    suspend fun getCounterpartyRecordById(recordId: String): FinanceCounterpartyRecordEntity?
+
+    @Query(
+        """
         SELECT * FROM finance_counterparties
         WHERE deleted_at IS NULL
         AND lower(email) = lower(:email)

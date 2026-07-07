@@ -490,7 +490,7 @@ export async function getFinanceLedgerOwnerProfile(db, userId) {
         email: rows[0]?.email ?? null
     };
 }
-export async function getFinanceCounterpartyForEmail(db, userId, counterpartyId) {
+export async function getFinanceCounterpartyShareTarget(db, userId, counterpartyId) {
     const rows = await db `
     select id, name, email, email_share_preference
     from finance_counterparties
@@ -503,14 +503,23 @@ export async function getFinanceCounterpartyForEmail(db, userId, counterpartyId)
     if (!counterparty) {
         throw notFound("Ledger user not found.");
     }
-    if (!counterparty.email?.trim()) {
+    return {
+        id: counterparty.id,
+        name: counterparty.name,
+        email: counterparty.email?.trim().toLowerCase() || null,
+        emailSharePreference: counterparty.email_share_preference ?? defaultCounterpartyEmailPreference
+    };
+}
+export async function getFinanceCounterpartyForEmail(db, userId, counterpartyId) {
+    const counterparty = await getFinanceCounterpartyShareTarget(db, userId, counterpartyId);
+    if (!counterparty.email) {
         throw badRequest("Ledger user email is required before sending email.");
     }
     return {
         id: counterparty.id,
         name: counterparty.name,
-        email: counterparty.email.trim().toLowerCase(),
-        emailSharePreference: counterparty.email_share_preference ?? defaultCounterpartyEmailPreference
+        email: counterparty.email,
+        emailSharePreference: counterparty.emailSharePreference
     };
 }
 export async function listFinanceCounterpartyRecordsByIdsForEmail(db, userId, input) {
@@ -578,6 +587,88 @@ export async function listOpenFinanceCounterpartyRecordsForEmail(db, userId, cou
         occurredAt: serializeDate(row.occurred_at),
         createdAt: serializeDate(row.created_at)
     }));
+}
+export async function listFinanceCounterpartyStatementRecordsForEmail(db, userId, counterpartyId, includeRecordIds) {
+    const rows = await db.unsafe(`
+      select
+        id,
+        direction,
+        purpose,
+        note,
+        amount::text as amount,
+        currency,
+        status,
+        occurred_at,
+        created_at
+      from finance_counterparty_records
+      where user_id = $1::uuid
+        and counterparty_id = $2
+        and deleted_at is null
+        and (
+          status = 'open'
+          or id = any($3::text[])
+        )
+      order by occurred_at asc, created_at asc
+    `, [userId, counterpartyId, includeRecordIds]);
+    return rows.map((row) => ({
+        id: row.id,
+        direction: row.direction,
+        purpose: row.purpose,
+        note: row.note,
+        amount: row.amount,
+        currency: row.currency,
+        status: row.status,
+        occurredAt: serializeDate(row.occurred_at),
+        createdAt: serializeDate(row.created_at)
+    }));
+}
+export async function updateFinanceCounterpartyRecordStatuses(db, userId, input) {
+    const rows = await db.unsafe(`
+      update finance_counterparty_records
+      set status = $4,
+          settled_at = case
+            when $4 = 'settled' then coalesce(settled_at, now())
+            else null
+          end,
+          updated_at = now()
+      where user_id = $1::uuid
+        and counterparty_id = $2
+        and id = any($3::text[])
+        and deleted_at is null
+      returning
+        id,
+        direction,
+        purpose,
+        note,
+        amount::text as amount,
+        currency,
+        status,
+        occurred_at,
+        created_at
+    `, [userId, input.counterpartyId, input.recordIds, input.status]);
+    if (rows.length !== input.recordIds.length) {
+        throw badRequest("Some selected ledger records were not found.");
+    }
+    return rows.map((row) => ({
+        id: row.id,
+        direction: row.direction,
+        purpose: row.purpose,
+        note: row.note,
+        amount: row.amount,
+        currency: row.currency,
+        status: row.status,
+        occurredAt: serializeDate(row.occurred_at),
+        createdAt: serializeDate(row.created_at)
+    }));
+}
+export async function deleteFinanceCounterpartyRecord(db, userId, recordId) {
+    await db `
+    update finance_counterparty_records
+    set deleted_at = now(),
+        updated_at = now()
+    where user_id = ${userId}::uuid
+      and id = ${recordId}
+  `;
 }
 export function shouldSendFinanceCounterpartyEmail(preference, direction) {
     switch (preference) {

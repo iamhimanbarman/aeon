@@ -4,6 +4,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import sensible from "@fastify/sensible";
 import { env } from "./config/env.js";
+import { kickFinanceEmailOutboxDrain } from "./email/outbox.service.js";
 import { AppError } from "./lib/errors.js";
 import { dbPlugin } from "./plugins/db.js";
 import { authPlugin } from "./plugins/auth.js";
@@ -43,6 +44,9 @@ export function buildApp() {
     });
     app.register(dbPlugin);
     app.register(authPlugin);
+    app.addHook("onReady", async () => {
+        kickFinanceEmailOutboxDrain(app.db, app.log, { force: true });
+    });
     app.setErrorHandler((error, request, reply) => {
         request.log.error({ err: error }, "request_failed");
         if (error instanceof AppError) {

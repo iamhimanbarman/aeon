@@ -55,6 +55,13 @@ internal data class FinanceRemoteCounterpartyManualEmailInput(
     val message: String? = null
 )
 
+internal data class FinanceRemoteCounterpartyRecordStatusInput(
+    val counterpartyId: String,
+    val recordIds: List<String>,
+    val status: String,
+    val message: String? = null
+)
+
 internal class FinanceRemoteClient(
     private val baseUrl: String = BuildConfig.AUTH_BASE_URL
 ) {
@@ -237,6 +244,46 @@ internal class FinanceRemoteClient(
                     payload.toString()
                         .toRequestBody("application/json; charset=utf-8".toMediaType())
                 )
+                .build()
+        )
+    }
+
+    suspend fun updateCounterpartyRecordStatus(
+        accessToken: String,
+        input: FinanceRemoteCounterpartyRecordStatusInput
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("counterpartyId", input.counterpartyId)
+            .put("recordIds", JSONArray(input.recordIds))
+            .put("status", input.status)
+
+        input.message?.takeIf(String::isNotBlank)?.let { message ->
+            payload.put("message", message)
+        }
+
+        executeJsonObject(
+            Request.Builder()
+                .url(buildUrl("/v1/finance/counterparty-record-status", emptyMap()))
+                .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
+                .post(
+                    payload.toString()
+                        .toRequestBody("application/json; charset=utf-8".toMediaType())
+                )
+                .build()
+        )
+    }
+
+    suspend fun deleteCounterpartyRecord(
+        accessToken: String,
+        recordId: String
+    ): JSONObject = withContext(Dispatchers.IO) {
+        executeJsonObject(
+            Request.Builder()
+                .url(buildUrl("/v1/finance/counterparty-records/$recordId", emptyMap()))
+                .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
+                .delete()
                 .build()
         )
     }

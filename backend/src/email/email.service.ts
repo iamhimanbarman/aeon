@@ -12,12 +12,13 @@ type OtpEmailInput = {
   purpose: "signup" | "login" | "verify_email" | "reset_password" | "change_email" | "reauth";
 };
 
-type CounterpartyShareEmailInput = {
+export type CounterpartyShareEmailInput = {
+  deliveryKey?: string | undefined;
   recipientEmail: string;
   recipientName: string;
   ownerName: string;
   ownerEmail?: string | undefined;
-  mode?: "new_record" | "manual_summary" | undefined;
+  mode?: "new_record" | "manual_summary" | "settlement_update" | undefined;
   direction: "owed_to_me" | "i_owe";
   purpose: string;
   amount: string;
@@ -30,35 +31,40 @@ type CounterpartyShareEmailInput = {
   statementRecords?: FinanceLedgerStatementRecord[] | undefined;
 };
 
+type ResendEmailAttachment = {
+  filename: string;
+  content: string;
+};
+
+type ResendEmailPayload = {
+  from: string;
+  to: string[];
+  subject: string;
+  html: string;
+  text: string;
+  attachments?: ResendEmailAttachment[] | undefined;
+};
+
+const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const RESEND_TIMEOUT_MS = 10_000;
+const RESEND_MAX_ATTEMPTS = 2;
+const RESEND_RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+
 export async function sendOtpEmail(input: OtpEmailInput): Promise<void> {
   if (env.NODE_ENV !== "production" && env.RESEND_API_KEY.startsWith("re_test")) {
     return;
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
+  await sendResendEmail(
+    {
       from: env.EMAIL_FROM,
       to: [input.email],
       subject: resolveSubject(input.purpose),
       html: buildOtpEmailHtml(input),
       text: buildOtpEmailText(input)
-    })
-  });
-
-  if (!response.ok) {
-    const providerError = await parseEmailProviderError(response);
-    throw new AppError(
-      502,
-      "email_delivery_failed",
-      "Aeon could not send the verification email right now.",
-      providerError
-    );
-  }
+    },
+    "Aeon could not send the verification email right now."
+  );
 }
 
 export async function sendPasswordResetEmail(input: Omit<OtpEmailInput, "purpose">): Promise<void> {
@@ -76,11 +82,13 @@ export async function sendFinanceCounterpartyEmail(
   }
 
   const attachments = await buildCounterpartyEmailAttachments(input);
-  const payload: Record<string, unknown> = {
+  const payload: ResendEmailPayload = {
     from: env.EMAIL_FROM,
     to: [input.recipientEmail],
     subject: input.mode === "manual_summary"
       ? `${input.ownerName} shared an Aeon ledger statement`
+      : input.mode === "settlement_update"
+        ? `${input.ownerName} shared an Aeon settlement update`
       : `${input.ownerName} shared an Aeon ledger update`,
     html: buildCounterpartyEmailHtml(input),
     text: buildCounterpartyEmailText(input)
@@ -90,24 +98,7 @@ export async function sendFinanceCounterpartyEmail(
     payload.attachments = attachments;
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const providerError = await parseEmailProviderError(response);
-    throw new AppError(
-      502,
-      "email_delivery_failed",
-      "Aeon could not send the account email right now.",
-      providerError
-    );
-  }
+  await sendResendEmail(payload, "Aeon could not send the account email right now.", input.deliveryKey);
 }
 
 async function buildCounterpartyEmailAttachments(
@@ -125,8 +116,16 @@ async function buildCounterpartyEmailAttachments(
     recipientName: input.recipientName,
     newRecordId: input.newRecordId,
     records,
-    statementTitle: input.mode === "manual_summary" ? "Selected ledger records" : "Open ledger account",
-    tableTitle: input.mode === "manual_summary" ? "Selected records" : "Open records",
+    statementTitle: input.mode === "manual_summary"
+      ? "Selected ledger records"
+      : input.mode === "settlement_update"
+        ? "Ledger settlement update"
+        : "Open ledger account",
+    tableTitle: input.mode === "manual_summary"
+      ? "Selected records"
+      : input.mode === "settlement_update"
+        ? "Current records"
+        : "Open records",
     letterMessage: input.letterMessage
   });
 
@@ -146,6 +145,162 @@ async function parseEmailProviderError(response: Response): Promise<Record<strin
     status: response.status,
     message: parseProviderMessage(body)
   };
+}
+
+export function isRetryableEmailDeliveryError(error: unknown): boolean {
+  if (!(error instanceof AppError) || error.code !== "email_delivery_failed") {
+    return false;
+  }
+
+  const details = (typeof error.details === "object" && error.details !== null)
+    ? error.details as Record<string, unknown>
+    : {};
+  const retryable = details.retryable;
+
+  if (typeof retryable === "boolean") {
+    return retryable;
+  }
+
+  const status = typeof details.status === "number" ? details.status : null;
+  return status != null ? RESEND_RETRYABLE_STATUSES.has(status) : true;
+}
+
+export function getEmailDeliveryErrorCode(error: unknown): string {
+  if (error instanceof AppError && error.code) {
+    return error.code;
+  }
+
+  return "email_delivery_failed";
+}
+
+export function getEmailDeliveryErrorMessage(error: unknown): string {
+  if (error instanceof AppError) {
+    const details = (typeof error.details === "object" && error.details !== null)
+      ? error.details as Record<string, unknown>
+      : {};
+    const providerMessage = typeof details.message === "string" ? details.message.trim() : "";
+    return providerMessage || error.message;
+  }
+
+  return error instanceof Error ? error.message : "Unknown email delivery error.";
+}
+
+async function sendResendEmail(
+  payload: ResendEmailPayload,
+  failureMessage: string,
+  idempotencyKey?: string
+): Promise<void> {
+  let lastError: AppError | null = null;
+
+  for (let attempt = 1; attempt <= RESEND_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(RESEND_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+          ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        return;
+      }
+
+      const providerError = await parseEmailProviderError(response);
+      const retryable = RESEND_RETRYABLE_STATUSES.has(response.status);
+      const normalizedError = new AppError(
+        502,
+        "email_delivery_failed",
+        failureMessage,
+        {
+          ...providerError,
+          retryable
+        }
+      );
+
+      if (!retryable || attempt === RESEND_MAX_ATTEMPTS) {
+        throw normalizedError;
+      }
+
+      lastError = normalizedError;
+    } catch (error) {
+      const normalizedError = normalizeEmailRequestError(error, failureMessage);
+
+      if (!isRetryableEmailDeliveryError(normalizedError) || attempt === RESEND_MAX_ATTEMPTS) {
+        throw normalizedError;
+      }
+
+      lastError = normalizedError;
+    }
+
+    await sleep(resolveResendRetryDelayMs(attempt));
+  }
+
+  throw lastError ?? new AppError(
+    502,
+    "email_delivery_failed",
+    failureMessage,
+    {
+      provider: "resend",
+      retryable: true,
+      message: "Email delivery exhausted all retry attempts."
+    }
+  );
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort("timeout"), RESEND_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function normalizeEmailRequestError(
+  error: unknown,
+  failureMessage: string
+): AppError {
+  if (error instanceof AppError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : "Unknown email request failure.";
+  const timeoutLike = error instanceof Error && /abort|timeout/i.test(error.name + " " + error.message);
+
+  return new AppError(
+    502,
+    "email_delivery_failed",
+    failureMessage,
+    {
+      provider: "resend",
+      status: null,
+      retryable: true,
+      message,
+      reason: timeoutLike ? "timeout" : "network"
+    }
+  );
+}
+
+function resolveResendRetryDelayMs(attempt: number): number {
+  const base = Math.min(1_000 * 2 ** (attempt - 1), 6_000);
+  return base + attempt * 150;
+}
+
+function sleep(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function parseProviderMessage(body: string): string {
@@ -220,9 +375,12 @@ function resolveHeading(purpose: OtpEmailInput["purpose"]): string {
 function buildCounterpartyEmailHtml(input: CounterpartyShareEmailInput): string {
   const summary = buildLedgerEmailSummary(input);
   const isManualSummary = input.mode === "manual_summary";
+  const isSettlementUpdate = input.mode === "settlement_update";
   const amountLabel = isManualSummary ? summary.netAmountLabel : formatCurrency(input.amount, input.currency);
   const directionLabel = isManualSummary
     ? "Selected statement net"
+    : isSettlementUpdate
+      ? "Current ledger balance"
     : input.direction === "owed_to_me"
       ? "Expected from you"
       : "Owed to you";
@@ -249,16 +407,20 @@ function buildCounterpartyEmailHtml(input: CounterpartyShareEmailInput): string 
     ? `
         <div style="margin-top:22px;padding:14px 0;border-top:1px solid rgba(245,197,66,0.28);border-bottom:1px solid rgba(245,197,66,0.20);">
           <div style="font-size:13px;line-height:1.6;color:#F5C542;font-weight:700;">PDF statement attached</div>
-          <div style="font-size:13px;line-height:1.6;color:#AEB5C7;">It includes ${isManualSummary ? "the selected records, sender message, and account total." : "previous open records, this new record, and the current total."}</div>
+          <div style="font-size:13px;line-height:1.6;color:#AEB5C7;">It includes ${isManualSummary ? "the selected records, sender message, and account total." : isSettlementUpdate ? "the settled record update and the remaining unsettled account." : "previous open records, this new record, and the current total."}</div>
         </div>
       `.trim()
     : "";
   const intro = isManualSummary
     ? `Hi ${escapeHtml(input.recipientName)}, ${escapeHtml(input.ownerName)} shared selected ledger records with you.`
+    : isSettlementUpdate
+      ? `Hi ${escapeHtml(input.recipientName)}, ${escapeHtml(input.ownerName)} marked ledger records as settled with you.`
     : `Hi ${escapeHtml(input.recipientName)}, ${escapeHtml(input.ownerName)} added a new ledger record with you.`;
-  const primaryLabel = isManualSummary ? "Selected records" : "New record";
+  const primaryLabel = isManualSummary ? "Selected records" : isSettlementUpdate ? "Settlement update" : "New record";
   const purposeLine = isManualSummary
     ? `${summary.recordCount} selected record${summary.recordCount === 1 ? "" : "s"} are included in this email and PDF.`
+    : isSettlementUpdate
+      ? `${summary.recordCount} current record${summary.recordCount === 1 ? "" : "s"} are included after this settlement update.`
     : `Purpose: ${escapeHtml(input.purpose)}`;
 
   return `
@@ -268,7 +430,7 @@ function buildCounterpartyEmailHtml(input: CounterpartyShareEmailInput): string 
           Aeon finance record
         </div>
         <h1 style="margin:24px 0 14px;font-size:42px;line-height:1.05;letter-spacing:-0.04em;color:#F8FAFC;">
-          ${isManualSummary ? "Shared ledger statement" : "Shared account update"}
+          ${isManualSummary ? "Shared ledger statement" : isSettlementUpdate ? "Settlement update" : "Shared account update"}
         </h1>
         <p style="margin:0 0 28px;color:#B6BDCD;font-size:18px;line-height:1.65;">
           ${intro}
@@ -290,9 +452,9 @@ function buildCounterpartyEmailHtml(input: CounterpartyShareEmailInput): string 
         ${letterBlock}
 
         <div style="margin-top:18px;padding:22px 24px;border-radius:28px;background:#0F121B;border:1px solid rgba(139,108,255,0.28);">
-          <div style="font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#8E96A8;margin-bottom:8px;">${isManualSummary ? "Selected total" : "Current open total"}</div>
+          <div style="font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#8E96A8;margin-bottom:8px;">${isManualSummary ? "Selected total" : isSettlementUpdate ? "Current ledger total" : "Current open total"}</div>
           <div style="font-size:34px;font-weight:800;letter-spacing:-0.03em;color:#F8FAFC;">${escapeHtml(summary.netAmountLabel)}</div>
-          <div style="margin-top:6px;font-size:14px;color:#B6BDCD;line-height:1.6;">${escapeHtml(summary.netText)} across ${summary.recordCount} ${isManualSummary ? "selected" : "open"} record${summary.recordCount === 1 ? "" : "s"}.</div>
+          <div style="margin-top:6px;font-size:14px;color:#B6BDCD;line-height:1.6;">${escapeHtml(summary.netText)} across ${summary.recordCount} ${isManualSummary ? "selected" : isSettlementUpdate ? "current" : "open"} record${summary.recordCount === 1 ? "" : "s"}.</div>
         </div>
 
         ${pdfLine}
@@ -313,8 +475,11 @@ function buildCounterpartyEmailHtml(input: CounterpartyShareEmailInput): string 
 function buildCounterpartyEmailText(input: CounterpartyShareEmailInput): string {
   const summary = buildLedgerEmailSummary(input);
   const isManualSummary = input.mode === "manual_summary";
+  const isSettlementUpdate = input.mode === "settlement_update";
   const directionLabel = isManualSummary
     ? "Selected statement net"
+    : isSettlementUpdate
+      ? "Current ledger balance"
     : input.direction === "owed_to_me"
       ? "Expected from you"
       : "Owed to you";
@@ -325,18 +490,20 @@ function buildCounterpartyEmailText(input: CounterpartyShareEmailInput): string 
     `Hi ${input.recipientName},`,
     isManualSummary
       ? `${input.ownerName} shared selected ledger records with you.`
+      : isSettlementUpdate
+        ? `${input.ownerName} marked ledger records as settled with you.`
       : `${input.ownerName} added a new ledger record with you.`,
     "",
-    isManualSummary ? "Selected records" : "New record",
+    isManualSummary ? "Selected records" : isSettlementUpdate ? "Settlement update" : "New record",
     `${directionLabel}: ${isManualSummary ? summary.netAmountLabel : formatCurrency(input.amount, input.currency)}`,
-    isManualSummary ? `Selected records: ${summary.recordCount}` : `Purpose: ${input.purpose}`,
+    isManualSummary ? `Selected records: ${summary.recordCount}` : isSettlementUpdate ? `Current records: ${summary.recordCount}` : `Purpose: ${input.purpose}`,
     `Recorded on: ${formatOccurredAt(input.occurredAt)}`,
     input.note ? `Note: ${input.note}` : null,
     input.letterMessage ? `Message: ${input.letterMessage}` : null,
     "",
-    isManualSummary ? "Selected total" : "Current open total",
+    isManualSummary ? "Selected total" : isSettlementUpdate ? "Current ledger total" : "Current open total",
     `${summary.netText}: ${summary.netAmountLabel}`,
-    `${isManualSummary ? "Selected" : "Open"} records: ${summary.recordCount}`,
+    `${isManualSummary ? "Selected" : isSettlementUpdate ? "Current" : "Open"} records: ${summary.recordCount}`,
     summary.hasStatement ? "A PDF statement is attached with the ledger records and total." : null,
     "",
     `Shared by: ${input.ownerName}${input.ownerEmail ? ` (${input.ownerEmail})` : ""}`,

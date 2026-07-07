@@ -1,9 +1,13 @@
 import { sendFinanceCounterpartyEmail } from "../../email/email.service.js";
+import { buildFinanceEmailDeliveryKey, kickFinanceEmailOutboxDrain, sendFinanceEmailWithQueueFallback } from "../../email/outbox.service.js";
 import { parseMonthKey } from "../../lib/dates.js";
 import { parseWithSchema } from "../../lib/validation.js";
-import { archiveFinanceAccount, createFinanceCounterpartyRecord, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCategory, deleteFinanceTransaction, getFinanceCounterpartyForEmail, getFinanceOverview, getFinanceTransaction, getFinanceLedgerOwnerProfile, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceCounterpartyRecordsByIdsForEmail, listOpenFinanceCounterpartyRecordsForEmail, listFinanceTransactionMonths, listFinanceTransactions, markFinanceCounterpartyRecordShared, markFinanceCounterpartyRecordsShared, shouldSendFinanceCounterpartyEmail, upsertFinanceCounterparty, setFinanceBudgetsForMonth } from "./repository.js";
-import { financeAccountInputSchema, financeBudgetQuerySchema, financeCounterpartyInputSchema, financeCounterpartyManualEmailInputSchema, financeCounterpartyRecordInputSchema, financeCounterpartyShareInputSchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
+import { archiveFinanceAccount, createFinanceCounterpartyRecord, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCounterpartyRecord, deleteFinanceCategory, deleteFinanceTransaction, getFinanceCounterpartyForEmail, getFinanceCounterpartyShareTarget, getFinanceOverview, getFinanceTransaction, getFinanceLedgerOwnerProfile, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceCounterpartyRecordsByIdsForEmail, listOpenFinanceCounterpartyRecordsForEmail, listFinanceCounterpartyStatementRecordsForEmail, listFinanceTransactionMonths, listFinanceTransactions, shouldSendFinanceCounterpartyEmail, upsertFinanceCounterparty, updateFinanceCounterpartyRecordStatuses, setFinanceBudgetsForMonth } from "./repository.js";
+import { financeAccountInputSchema, financeBudgetQuerySchema, financeCounterpartyInputSchema, financeCounterpartyManualEmailInputSchema, financeCounterpartyRecordInputSchema, financeCounterpartyRecordStatusInputSchema, financeCounterpartyShareInputSchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
 export async function registerFinanceRoutes(app) {
+    app.addHook("onRequest", async () => {
+        kickFinanceEmailOutboxDrain(app.db, app.log);
+    });
     app.get("/categories", { preHandler: app.authenticate }, async (request) => {
         return listFinanceCategories(app.db, request.authUser.userId);
     });
@@ -76,28 +80,38 @@ export async function registerFinanceRoutes(app) {
                 : "skipped";
         let emailed = Boolean(existingEmailSharedAt);
         let emailSharedAt = existingEmailSharedAt;
+        let emailQueuedAt = null;
         let emailErrorCode = null;
         if (!emailSharedAt && shouldEmail) {
             try {
+                const deliveryKey = buildFinanceEmailDeliveryKey("record", [result.recordId]);
                 const openRecords = await listOpenFinanceCounterpartyRecordsForEmail(app.db, request.authUser.userId, String(result.counterparty.id));
-                await sendFinanceCounterpartyEmail({
-                    recipientEmail: body.counterpartyEmail,
-                    recipientName: body.counterpartyName,
-                    ownerName,
-                    ownerEmail,
-                    direction: body.direction,
-                    purpose: body.purpose,
-                    amount: body.amount,
-                    currency: body.currency,
-                    occurredAt: body.occurredAt,
-                    note: body.note,
-                    newRecordId: result.recordId,
-                    openRecords
+                const delivery = await sendFinanceEmailWithQueueFallback(app.db, {
+                    logger: app.log,
+                    userId: request.authUser.userId,
+                    deliveryKey,
+                    input: {
+                        deliveryKey,
+                        recipientEmail: body.counterpartyEmail,
+                        recipientName: body.counterpartyName,
+                        ownerName,
+                        ownerEmail,
+                        direction: body.direction,
+                        purpose: body.purpose,
+                        amount: body.amount,
+                        currency: body.currency,
+                        occurredAt: body.occurredAt,
+                        note: body.note,
+                        newRecordId: result.recordId,
+                        openRecords
+                    },
+                    recordIds: [result.recordId]
                 });
-                emailed = true;
-                emailStatus = "sent";
-                emailSharedAt = new Date().toISOString();
-                await markFinanceCounterpartyRecordShared(app.db, request.authUser.userId, result.recordId, emailSharedAt);
+                emailed = delivery.emailed;
+                emailStatus = delivery.emailStatus;
+                emailSharedAt = delivery.emailSharedAt;
+                emailQueuedAt = delivery.emailQueuedAt;
+                emailErrorCode = delivery.emailErrorCode;
             }
             catch (error) {
                 emailStatus = "failed";
@@ -116,6 +130,7 @@ export async function registerFinanceRoutes(app) {
             emailed,
             emailStatus,
             emailSharedAt,
+            emailQueuedAt,
             emailErrorCode,
             counterparty: result.counterparty,
             record: {
@@ -123,6 +138,98 @@ export async function registerFinanceRoutes(app) {
                 emailSharedAt
             }
         };
+    });
+    app.post("/counterparty-record-status", { preHandler: app.authenticate }, async (request) => {
+        const body = parseWithSchema(financeCounterpartyRecordStatusInputSchema, request.body, "Invalid finance counterparty record status payload.");
+        const userId = request.authUser.userId;
+        const updatedRecords = await updateFinanceCounterpartyRecordStatuses(app.db, userId, body);
+        let emailed = false;
+        let emailStatus = "skipped";
+        let emailSharedAt = null;
+        let emailQueuedAt = null;
+        let emailErrorCode = null;
+        if (body.status === "settled") {
+            const ownerProfile = await getFinanceLedgerOwnerProfile(app.db, userId);
+            const ownerEmail = ownerProfile.email ?? request.authUser?.email;
+            const ownerName = resolveFinanceLedgerOwnerName(ownerProfile.displayName, request.authUser?.displayName, ownerEmail);
+            const counterparty = await getFinanceCounterpartyShareTarget(app.db, userId, body.counterpartyId);
+            if (counterparty.email) {
+                try {
+                    const deliveryKey = buildFinanceEmailDeliveryKey("settlement", [
+                        body.counterpartyId,
+                        ...body.recordIds.slice().sort()
+                    ]);
+                    const statementRecords = await listFinanceCounterpartyStatementRecordsForEmail(app.db, userId, body.counterpartyId, body.recordIds);
+                    const currency = statementRecords[0]?.currency ?? updatedRecords[0]?.currency ?? "INR";
+                    const recipientLend = statementRecords
+                        .filter((record) => record.direction === "i_owe")
+                        .reduce((total, record) => total + Number(record.amount), 0);
+                    const recipientBorrow = statementRecords
+                        .filter((record) => record.direction === "owed_to_me")
+                        .reduce((total, record) => total + Number(record.amount), 0);
+                    const netAmount = recipientLend - recipientBorrow;
+                    const delivery = await sendFinanceEmailWithQueueFallback(app.db, {
+                        logger: app.log,
+                        userId,
+                        deliveryKey,
+                        input: {
+                            deliveryKey,
+                            recipientEmail: counterparty.email,
+                            recipientName: counterparty.name,
+                            ownerName,
+                            ownerEmail,
+                            mode: "settlement_update",
+                            direction: netAmount >= 0 ? "i_owe" : "owed_to_me",
+                            purpose: `${body.recordIds.length} settled ledger record${body.recordIds.length === 1 ? "" : "s"}`,
+                            amount: Math.abs(netAmount).toFixed(2),
+                            currency,
+                            occurredAt: new Date().toISOString(),
+                            letterMessage: body.message,
+                            statementRecords
+                        },
+                        recordIds: body.recordIds
+                    });
+                    emailed = delivery.emailed;
+                    emailStatus = delivery.emailStatus;
+                    emailSharedAt = delivery.emailSharedAt;
+                    emailQueuedAt = delivery.emailQueuedAt;
+                    emailErrorCode = delivery.emailErrorCode;
+                }
+                catch (error) {
+                    emailStatus = "failed";
+                    emailErrorCode = error instanceof Error && "code" in error
+                        ? String(error.code ?? "email_delivery_failed")
+                        : "email_delivery_failed";
+                    app.log.warn({
+                        err: error,
+                        userId,
+                        counterpartyId: body.counterpartyId,
+                        recordCount: body.recordIds.length
+                    }, "finance_counterparty_settlement_email_failed");
+                }
+            }
+            else {
+                emailStatus = "skipped";
+            }
+        }
+        return {
+            ok: true,
+            emailed,
+            emailStatus,
+            emailSharedAt,
+            emailQueuedAt,
+            emailErrorCode,
+            status: body.status,
+            recordIds: body.recordIds,
+            records: updatedRecords.map((record) => ({
+                ...record,
+                emailSharedAt
+            }))
+        };
+    });
+    app.delete("/counterparty-records/:recordId", { preHandler: app.authenticate }, async (request, reply) => {
+        await deleteFinanceCounterpartyRecord(app.db, request.authUser.userId, request.params.recordId);
+        return reply.status(204).send();
     });
     app.post("/counterparty-record-emails", { preHandler: app.authenticate }, async (request) => {
         const body = parseWithSchema(financeCounterpartyManualEmailInputSchema, request.body, "Invalid finance counterparty email payload.");
@@ -140,28 +247,39 @@ export async function registerFinanceRoutes(app) {
             .filter((record) => record.direction === "i_owe")
             .reduce((total, record) => total + Number(record.amount), 0);
         const net = owedToOwner - ownerOwes;
-        const emailSharedAt = new Date().toISOString();
         try {
-            await sendFinanceCounterpartyEmail({
-                recipientEmail: counterparty.email,
-                recipientName: counterparty.name,
-                ownerName,
-                ownerEmail,
-                mode: "manual_summary",
-                direction: net >= 0 ? "owed_to_me" : "i_owe",
-                purpose: `${records.length} selected ledger record${records.length === 1 ? "" : "s"}`,
-                amount: Math.abs(net).toFixed(2),
-                currency,
-                occurredAt: emailSharedAt,
-                letterMessage: body.message,
-                statementRecords: records
+            const deliveryKey = buildFinanceEmailDeliveryKey("manual", [
+                body.counterpartyId,
+                ...body.recordIds.slice().sort()
+            ]);
+            const delivery = await sendFinanceEmailWithQueueFallback(app.db, {
+                logger: app.log,
+                userId,
+                deliveryKey,
+                input: {
+                    deliveryKey,
+                    recipientEmail: counterparty.email,
+                    recipientName: counterparty.name,
+                    ownerName,
+                    ownerEmail,
+                    mode: "manual_summary",
+                    direction: net >= 0 ? "owed_to_me" : "i_owe",
+                    purpose: `${records.length} selected ledger record${records.length === 1 ? "" : "s"}`,
+                    amount: Math.abs(net).toFixed(2),
+                    currency,
+                    occurredAt: new Date().toISOString(),
+                    letterMessage: body.message,
+                    statementRecords: records
+                },
+                recordIds: body.recordIds
             });
-            await markFinanceCounterpartyRecordsShared(app.db, userId, body.recordIds, emailSharedAt);
             return {
                 ok: true,
-                emailed: true,
-                emailStatus: "sent",
-                emailSharedAt,
+                emailed: delivery.emailed,
+                emailStatus: delivery.emailStatus,
+                emailSharedAt: delivery.emailSharedAt,
+                emailQueuedAt: delivery.emailQueuedAt,
+                emailErrorCode: delivery.emailErrorCode,
                 recordIds: body.recordIds,
                 recipientEmail: counterparty.email
             };

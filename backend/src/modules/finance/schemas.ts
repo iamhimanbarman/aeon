@@ -133,3 +133,14 @@ export const financeCounterpartyManualEmailInputSchema = z.object({
     .transform((recordIds) => Array.from(new Set(recordIds))),
   message: optionalTrimmedStringSchema
 });
+
+export const financeCounterpartyRecordStatusInputSchema = z.object({
+  counterpartyId: z.string().trim().min(1).max(120),
+  recordIds: z
+    .array(z.string().trim().min(1).max(120))
+    .min(1, "Select at least one ledger record.")
+    .max(50, "Select fewer ledger records at once.")
+    .transform((recordIds) => Array.from(new Set(recordIds))),
+  status: z.enum(["open", "settled"]).default("settled"),
+  message: optionalTrimmedStringSchema
+});

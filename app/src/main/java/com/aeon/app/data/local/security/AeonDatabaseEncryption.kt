@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase as PlatformSQLiteDatabase
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import androidx.core.content.edit
 import java.io.File
 import java.io.FileInputStream
@@ -19,20 +20,54 @@ import net.sqlcipher.database.SupportFactory
 
 object AeonDatabaseEncryption {
 
-    fun createSupportFactory(
+    fun createSupportFactoryOrNull(
         context: Context,
         databaseName: String
-    ): SupportFactory {
+    ): SupportFactory? {
         val appContext = context.applicationContext
         CipherSQLiteDatabase.loadLibs(appContext)
 
+        val databaseFile = appContext.getDatabasePath(databaseName)
         val passphrase = AeonDatabasePassphraseStore(appContext).getOrCreatePassphrase()
-        migratePlaintextDatabaseIfNeeded(
-            context = appContext,
-            databaseName = databaseName,
-            passphrase = passphrase
-        )
 
+        if (!databaseFile.exists()) {
+            clearDeferredMigration(appContext, databaseName)
+            return createSupportFactory(passphrase)
+        }
+
+        if (!databaseFile.isPlaintextSqliteDatabase()) {
+            clearDeferredMigration(appContext, databaseName)
+            return createSupportFactory(passphrase)
+        }
+
+        if (isMigrationDeferred(appContext, databaseName)) {
+            Log.w(TAG, "Opening plaintext Aeon database after a deferred encryption migration.")
+            return null
+        }
+
+        return runCatching {
+            migratePlaintextDatabaseIfNeeded(
+                context = appContext,
+                databaseName = databaseName,
+                passphrase = passphrase
+            )
+            clearDeferredMigration(appContext, databaseName)
+            createSupportFactory(passphrase)
+        }.getOrElse { throwable ->
+            markMigrationDeferred(appContext, databaseName)
+            cleanupMigrationArtifacts(databaseFile.parentFile, databaseName)
+            Log.e(
+                TAG,
+                "Falling back to plaintext Aeon database after encryption migration failed.",
+                throwable
+            )
+            null
+        }
+    }
+
+    private fun createSupportFactory(
+        passphrase: String
+    ): SupportFactory {
         return SupportFactory(
             CipherSQLiteDatabase.getBytes(passphrase.toCharArray()),
             null,
@@ -102,6 +137,8 @@ object AeonDatabaseEncryption {
         encryptedFile: File,
         passphrase: String
     ) {
+        preCreateEncryptedDatabase(encryptedFile, passphrase)
+
         val database = CipherSQLiteDatabase.openDatabase(
             plaintextFile.absolutePath,
             "",
@@ -115,6 +152,27 @@ object AeonDatabaseEncryption {
             )
             database.rawExecSQL("SELECT sqlcipher_export('encrypted')")
             database.rawExecSQL("DETACH DATABASE encrypted")
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun preCreateEncryptedDatabase(
+        encryptedFile: File,
+        passphrase: String
+    ) {
+        encryptedFile.parentFile?.mkdirs()
+        if (encryptedFile.exists()) {
+            encryptedFile.delete()
+        }
+
+        val database = CipherSQLiteDatabase.openOrCreateDatabase(
+            encryptedFile,
+            passphrase,
+            null
+        )
+        try {
+            database.rawExecSQL("PRAGMA journal_mode=DELETE")
         } finally {
             database.close()
         }
@@ -145,6 +203,15 @@ object AeonDatabaseEncryption {
         File("${databaseFile.absolutePath}-journal").delete()
     }
 
+    private fun cleanupMigrationArtifacts(
+        databaseDirectory: File?,
+        databaseName: String
+    ) {
+        if (databaseDirectory == null) return
+        File(databaseDirectory, "$databaseName.cipher_migration").delete()
+        File(databaseDirectory, "$databaseName.plaintext_migration_backup").delete()
+    }
+
     private fun File.isPlaintextSqliteDatabase(): Boolean {
         val header = ByteArray(SQLITE_HEADER.size)
         val bytesRead = FileInputStream(this).use { input ->
@@ -156,6 +223,38 @@ object AeonDatabaseEncryption {
 
     private fun String.sqlLiteral(): String = replace("'", "''")
 
+    private fun isMigrationDeferred(
+        context: Context,
+        databaseName: String
+    ): Boolean {
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(migrationDeferredKey(databaseName), false)
+    }
+
+    private fun markMigrationDeferred(
+        context: Context,
+        databaseName: String
+    ) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit {
+            putBoolean(migrationDeferredKey(databaseName), true)
+        }
+    }
+
+    private fun clearDeferredMigration(
+        context: Context,
+        databaseName: String
+    ) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit {
+            remove(migrationDeferredKey(databaseName))
+        }
+    }
+
+    private fun migrationDeferredKey(databaseName: String): String {
+        return "migration_deferred_$databaseName"
+    }
+
+    private const val PREFERENCES = "aeon_database_encryption"
+    private const val TAG = "AeonDatabaseEncryption"
     private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 }
 

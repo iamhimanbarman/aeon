@@ -11,6 +11,7 @@ import type {
   financeCounterpartyManualEmailInputSchema,
   financeCounterpartyInputSchema,
   financeCounterpartyRecordInputSchema,
+  financeCounterpartyRecordStatusInputSchema,
   financeCategoryInputSchema,
   financeSetMonthBudgetSchema,
   financeTransactionInputSchema,
@@ -28,6 +29,7 @@ type FinanceBudgetQuery = z.infer<typeof financeBudgetQuerySchema>;
 type FinanceCounterpartyInput = z.infer<typeof financeCounterpartyInputSchema>;
 type FinanceCounterpartyRecordInput = z.infer<typeof financeCounterpartyRecordInputSchema>;
 type FinanceCounterpartyManualEmailInput = z.infer<typeof financeCounterpartyManualEmailInputSchema>;
+type FinanceCounterpartyRecordStatusInput = z.infer<typeof financeCounterpartyRecordStatusInputSchema>;
 type FinanceCounterpartyEmailPreference = "all" | "lend" | "borrow" | "off";
 
 const defaultCounterpartyEmailPreference: FinanceCounterpartyEmailPreference = "all";
@@ -53,6 +55,13 @@ export type FinanceCounterpartyEmailTarget = {
   id: string;
   name: string;
   email: string;
+  emailSharePreference: FinanceCounterpartyEmailPreference;
+};
+
+export type FinanceCounterpartyShareTarget = {
+  id: string;
+  name: string;
+  email: string | null;
   emailSharePreference: FinanceCounterpartyEmailPreference;
 };
 
@@ -658,11 +667,11 @@ export async function getFinanceLedgerOwnerProfile(
   };
 }
 
-export async function getFinanceCounterpartyForEmail(
+export async function getFinanceCounterpartyShareTarget(
   db: Sql<Record<string, unknown>>,
   userId: string,
   counterpartyId: string
-): Promise<FinanceCounterpartyEmailTarget> {
+): Promise<FinanceCounterpartyShareTarget> {
   const rows = await db<{
     id: string;
     name: string;
@@ -683,15 +692,30 @@ export async function getFinanceCounterpartyForEmail(
     throw notFound("Ledger user not found.");
   }
 
-  if (!counterparty.email?.trim()) {
+  return {
+    id: counterparty.id,
+    name: counterparty.name,
+    email: counterparty.email?.trim().toLowerCase() || null,
+    emailSharePreference: counterparty.email_share_preference ?? defaultCounterpartyEmailPreference
+  };
+}
+
+export async function getFinanceCounterpartyForEmail(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  counterpartyId: string
+): Promise<FinanceCounterpartyEmailTarget> {
+  const counterparty = await getFinanceCounterpartyShareTarget(db, userId, counterpartyId);
+
+  if (!counterparty.email) {
     throw badRequest("Ledger user email is required before sending email.");
   }
 
   return {
     id: counterparty.id,
     name: counterparty.name,
-    email: counterparty.email.trim().toLowerCase(),
-    emailSharePreference: counterparty.email_share_preference ?? defaultCounterpartyEmailPreference
+    email: counterparty.email,
+    emailSharePreference: counterparty.emailSharePreference
   };
 }
 
@@ -796,6 +820,133 @@ export async function listOpenFinanceCounterpartyRecordsForEmail(
     occurredAt: serializeDate(row.occurred_at),
     createdAt: serializeDate(row.created_at)
   }));
+}
+
+export async function listFinanceCounterpartyStatementRecordsForEmail(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  counterpartyId: string,
+  includeRecordIds: string[]
+): Promise<FinanceCounterpartyOpenRecord[]> {
+  const rows = await db.unsafe<{
+    id: string;
+    direction: "owed_to_me" | "i_owe";
+    purpose: string;
+    note: string | null;
+    amount: string;
+    currency: string;
+    status: "open" | "settled";
+    occurred_at: Date | string;
+    created_at: Date | string;
+  }[]>(
+    `
+      select
+        id,
+        direction,
+        purpose,
+        note,
+        amount::text as amount,
+        currency,
+        status,
+        occurred_at,
+        created_at
+      from finance_counterparty_records
+      where user_id = $1::uuid
+        and counterparty_id = $2
+        and deleted_at is null
+        and (
+          status = 'open'
+          or id = any($3::text[])
+        )
+      order by occurred_at asc, created_at asc
+    `,
+    [userId, counterpartyId, includeRecordIds]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    direction: row.direction,
+    purpose: row.purpose,
+    note: row.note,
+    amount: row.amount,
+    currency: row.currency,
+    status: row.status,
+    occurredAt: serializeDate(row.occurred_at),
+    createdAt: serializeDate(row.created_at)
+  }));
+}
+
+export async function updateFinanceCounterpartyRecordStatuses(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  input: FinanceCounterpartyRecordStatusInput
+): Promise<FinanceCounterpartyOpenRecord[]> {
+  const rows = await db.unsafe<{
+    id: string;
+    direction: "owed_to_me" | "i_owe";
+    purpose: string;
+    note: string | null;
+    amount: string;
+    currency: string;
+    status: "open" | "settled";
+    occurred_at: Date | string;
+    created_at: Date | string;
+  }[]>(
+    `
+      update finance_counterparty_records
+      set status = $4,
+          settled_at = case
+            when $4 = 'settled' then coalesce(settled_at, now())
+            else null
+          end,
+          updated_at = now()
+      where user_id = $1::uuid
+        and counterparty_id = $2
+        and id = any($3::text[])
+        and deleted_at is null
+      returning
+        id,
+        direction,
+        purpose,
+        note,
+        amount::text as amount,
+        currency,
+        status,
+        occurred_at,
+        created_at
+    `,
+    [userId, input.counterpartyId, input.recordIds, input.status]
+  );
+
+  if (rows.length !== input.recordIds.length) {
+    throw badRequest("Some selected ledger records were not found.");
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    direction: row.direction,
+    purpose: row.purpose,
+    note: row.note,
+    amount: row.amount,
+    currency: row.currency,
+    status: row.status,
+    occurredAt: serializeDate(row.occurred_at),
+    createdAt: serializeDate(row.created_at)
+  }));
+}
+
+export async function deleteFinanceCounterpartyRecord(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  recordId: string
+) {
+  await db`
+    update finance_counterparty_records
+    set deleted_at = now(),
+        updated_at = now()
+    where user_id = ${userId}::uuid
+      and id = ${recordId}
+  `;
 }
 
 export function shouldSendFinanceCounterpartyEmail(

@@ -49,6 +49,12 @@ internal data class FinanceRemoteCounterpartyShareInput(
     val occurredAt: String
 )
 
+internal data class FinanceRemoteCounterpartyManualEmailInput(
+    val counterpartyId: String,
+    val recordIds: List<String>,
+    val message: String? = null
+)
+
 internal class FinanceRemoteClient(
     private val baseUrl: String = BuildConfig.AUTH_BASE_URL
 ) {
@@ -200,6 +206,31 @@ internal class FinanceRemoteClient(
         executeJsonObject(
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparty-records", emptyMap()))
+                .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
+                .post(
+                    payload.toString()
+                        .toRequestBody("application/json; charset=utf-8".toMediaType())
+                )
+                .build()
+        )
+    }
+
+    suspend fun sendCounterpartyRecordsEmail(
+        accessToken: String,
+        input: FinanceRemoteCounterpartyManualEmailInput
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("counterpartyId", input.counterpartyId)
+            .put("recordIds", JSONArray(input.recordIds))
+
+        input.message?.takeIf(String::isNotBlank)?.let { message ->
+            payload.put("message", message)
+        }
+
+        executeJsonObject(
+            Request.Builder()
+                .url(buildUrl("/v1/finance/counterparty-record-emails", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
                 .header("Accept", "application/json")
                 .post(

@@ -855,6 +855,7 @@ private object AeonNavigationMotionRegistry {
         RecommendationDetailDestination.baseRoute,
         LedgerCounterpartyDetailDestination.baseRoute,
         LedgerEmailPreferenceDestination.baseRoute,
+        LedgerManualEmailDestination.baseRoute,
         FinanceEntryDetailDestination.baseRoute,
         BudgetDetailDestination.baseRoute,
         FinanceOverviewDestination.baseRoute,

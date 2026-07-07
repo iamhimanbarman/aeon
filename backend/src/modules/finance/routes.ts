@@ -10,16 +10,19 @@ import {
   createOrUpdateFinanceTransaction,
   deleteFinanceCategory,
   deleteFinanceTransaction,
+  getFinanceCounterpartyForEmail,
   getFinanceOverview,
   getFinanceTransaction,
   getFinanceLedgerOwnerProfile,
   listFinanceAccounts,
   listFinanceBudgets,
   listFinanceCategories,
+  listFinanceCounterpartyRecordsByIdsForEmail,
   listOpenFinanceCounterpartyRecordsForEmail,
   listFinanceTransactionMonths,
   listFinanceTransactions,
   markFinanceCounterpartyRecordShared,
+  markFinanceCounterpartyRecordsShared,
   shouldSendFinanceCounterpartyEmail,
   upsertFinanceCounterparty,
   setFinanceBudgetsForMonth
@@ -28,6 +31,7 @@ import {
   financeAccountInputSchema,
   financeBudgetQuerySchema,
   financeCounterpartyInputSchema,
+  financeCounterpartyManualEmailInputSchema,
   financeCounterpartyRecordInputSchema,
   financeCounterpartyShareInputSchema,
   financeCategoryInputSchema,
@@ -203,6 +207,86 @@ export async function registerFinanceRoutes(app: FastifyInstance): Promise<void>
         emailSharedAt
       }
     };
+  });
+
+  app.post("/counterparty-record-emails", { preHandler: app.authenticate }, async (request) => {
+    const body = parseWithSchema(
+      financeCounterpartyManualEmailInputSchema,
+      request.body,
+      "Invalid finance counterparty email payload."
+    );
+
+    const userId = request.authUser!.userId;
+    const ownerProfile = await getFinanceLedgerOwnerProfile(app.db, userId);
+    const ownerEmail = ownerProfile.email ?? request.authUser?.email;
+    const ownerName = resolveFinanceLedgerOwnerName(
+      ownerProfile.displayName,
+      request.authUser?.displayName,
+      ownerEmail
+    );
+    const counterparty = await getFinanceCounterpartyForEmail(
+      app.db,
+      userId,
+      body.counterpartyId
+    );
+    const records = await listFinanceCounterpartyRecordsByIdsForEmail(
+      app.db,
+      userId,
+      body
+    );
+    const currency = records[0]?.currency ?? "INR";
+    const owedToOwner = records
+      .filter((record) => record.direction === "owed_to_me")
+      .reduce((total, record) => total + Number(record.amount), 0);
+    const ownerOwes = records
+      .filter((record) => record.direction === "i_owe")
+      .reduce((total, record) => total + Number(record.amount), 0);
+    const net = owedToOwner - ownerOwes;
+    const emailSharedAt = new Date().toISOString();
+
+    try {
+      await sendFinanceCounterpartyEmail({
+        recipientEmail: counterparty.email,
+        recipientName: counterparty.name,
+        ownerName,
+        ownerEmail,
+        mode: "manual_summary",
+        direction: net >= 0 ? "owed_to_me" : "i_owe",
+        purpose: `${records.length} selected ledger record${records.length === 1 ? "" : "s"}`,
+        amount: Math.abs(net).toFixed(2),
+        currency,
+        occurredAt: emailSharedAt,
+        letterMessage: body.message,
+        statementRecords: records
+      });
+
+      await markFinanceCounterpartyRecordsShared(
+        app.db,
+        userId,
+        body.recordIds,
+        emailSharedAt
+      );
+
+      return {
+        ok: true,
+        emailed: true,
+        emailStatus: "sent",
+        emailSharedAt,
+        recordIds: body.recordIds,
+        recipientEmail: counterparty.email
+      };
+    } catch (error) {
+      app.log.warn(
+        {
+          err: error,
+          userId,
+          counterpartyId: body.counterpartyId,
+          recordCount: body.recordIds.length
+        },
+        "finance_counterparty_manual_email_failed"
+      );
+      throw error;
+    }
   });
 
   app.post("/counterparty-share", { preHandler: app.authenticate }, async (request) => {

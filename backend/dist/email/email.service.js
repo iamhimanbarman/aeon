@@ -38,7 +38,9 @@ export async function sendFinanceCounterpartyEmail(input) {
     const payload = {
         from: env.EMAIL_FROM,
         to: [input.recipientEmail],
-        subject: `${input.ownerName} shared an Aeon ledger update`,
+        subject: input.mode === "manual_summary"
+            ? `${input.ownerName} shared an Aeon ledger statement`
+            : `${input.ownerName} shared an Aeon ledger update`,
         html: buildCounterpartyEmailHtml(input),
         text: buildCounterpartyEmailText(input)
     };
@@ -59,7 +61,7 @@ export async function sendFinanceCounterpartyEmail(input) {
     }
 }
 async function buildCounterpartyEmailAttachments(input) {
-    const records = input.openRecords ?? [];
+    const records = getStatementRecords(input);
     if (records.length === 0) {
         return [];
     }
@@ -67,8 +69,11 @@ async function buildCounterpartyEmailAttachments(input) {
         ownerName: input.ownerName,
         ownerEmail: input.ownerEmail,
         recipientName: input.recipientName,
-        newRecordId: input.newRecordId ?? records.at(-1)?.id ?? "ledger_record",
-        records
+        newRecordId: input.newRecordId,
+        records,
+        statementTitle: input.mode === "manual_summary" ? "Selected ledger records" : "Open ledger account",
+        tableTitle: input.mode === "manual_summary" ? "Selected records" : "Open records",
+        letterMessage: input.letterMessage
     });
     return [
         {
@@ -151,13 +156,26 @@ function resolveHeading(purpose) {
 }
 function buildCounterpartyEmailHtml(input) {
     const summary = buildLedgerEmailSummary(input);
-    const amountLabel = formatCurrency(input.amount, input.currency);
-    const directionLabel = input.direction === "owed_to_me" ? "Expected from you" : "Owed to you";
+    const isManualSummary = input.mode === "manual_summary";
+    const amountLabel = isManualSummary ? summary.netAmountLabel : formatCurrency(input.amount, input.currency);
+    const directionLabel = isManualSummary
+        ? "Selected statement net"
+        : input.direction === "owed_to_me"
+            ? "Expected from you"
+            : "Owed to you";
     const noteBlock = input.note
         ? `
         <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,0.08);padding-top:14px;">
           <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#7B8395;margin-bottom:7px;">Note</div>
           <div style="font-size:14px;line-height:1.6;color:#E9ECF7;">${escapeHtml(input.note)}</div>
+        </div>
+      `.trim()
+        : "";
+    const letterBlock = input.letterMessage
+        ? `
+        <div style="margin-top:18px;padding:18px 20px;border-radius:24px;background:#10131D;border:1px solid rgba(255,255,255,0.08);">
+          <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#F5C542;margin-bottom:10px;font-weight:700;">Message from ${escapeHtml(input.ownerName)}</div>
+          <div style="font-size:15px;line-height:1.7;color:#E9ECF7;">${escapeHtml(input.letterMessage)}</div>
         </div>
       `.trim()
         : "";
@@ -168,10 +186,17 @@ function buildCounterpartyEmailHtml(input) {
         ? `
         <div style="margin-top:22px;padding:14px 0;border-top:1px solid rgba(245,197,66,0.28);border-bottom:1px solid rgba(245,197,66,0.20);">
           <div style="font-size:13px;line-height:1.6;color:#F5C542;font-weight:700;">PDF statement attached</div>
-          <div style="font-size:13px;line-height:1.6;color:#AEB5C7;">It includes previous open records, this new record, and the current total.</div>
+          <div style="font-size:13px;line-height:1.6;color:#AEB5C7;">It includes ${isManualSummary ? "the selected records, sender message, and account total." : "previous open records, this new record, and the current total."}</div>
         </div>
       `.trim()
         : "";
+    const intro = isManualSummary
+        ? `Hi ${escapeHtml(input.recipientName)}, ${escapeHtml(input.ownerName)} shared selected ledger records with you.`
+        : `Hi ${escapeHtml(input.recipientName)}, ${escapeHtml(input.ownerName)} added a new ledger record with you.`;
+    const primaryLabel = isManualSummary ? "Selected records" : "New record";
+    const purposeLine = isManualSummary
+        ? `${summary.recordCount} selected record${summary.recordCount === 1 ? "" : "s"} are included in this email and PDF.`
+        : `Purpose: ${escapeHtml(input.purpose)}`;
     return `
     <div style="margin:0;background:#07080C;color:#F8FAFC;font-family:Arial,Helvetica,sans-serif;">
       <div style="max-width:620px;margin:0 auto;padding:38px 26px 42px;">
@@ -179,18 +204,18 @@ function buildCounterpartyEmailHtml(input) {
           Aeon finance record
         </div>
         <h1 style="margin:24px 0 14px;font-size:42px;line-height:1.05;letter-spacing:-0.04em;color:#F8FAFC;">
-          Shared account update
+          ${isManualSummary ? "Shared ledger statement" : "Shared account update"}
         </h1>
         <p style="margin:0 0 28px;color:#B6BDCD;font-size:18px;line-height:1.65;">
-          Hi ${escapeHtml(input.recipientName)}, ${escapeHtml(input.ownerName)} added a new ledger record with you.
+          ${intro}
         </p>
 
         <div style="padding:24px;border-radius:30px;background:#121622;border:1px solid rgba(255,255,255,0.08);">
-          <div style="display:inline-block;padding:7px 12px;border-radius:999px;background:#2B2414;border:1px solid rgba(245,197,66,0.28);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#F5C542;font-weight:700;">New record</div>
+          <div style="display:inline-block;padding:7px 12px;border-radius:999px;background:#2B2414;border:1px solid rgba(245,197,66,0.28);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#F5C542;font-weight:700;">${primaryLabel}</div>
           <div style="margin-top:16px;font-size:13px;color:#8E96A8;text-transform:uppercase;letter-spacing:0.16em;">${directionLabel}</div>
           <div style="margin-top:8px;font-size:42px;font-weight:800;letter-spacing:-0.04em;color:#F8FAFC;">${amountLabel}</div>
           <div style="margin-top:10px;font-size:15px;color:#B6BDCD;line-height:1.7;">
-            Purpose: ${escapeHtml(input.purpose)}
+            ${purposeLine}
           </div>
           <div style="margin-top:4px;font-size:15px;color:#B6BDCD;line-height:1.7;">
             Recorded on: ${escapeHtml(formatOccurredAt(input.occurredAt))}
@@ -198,10 +223,12 @@ function buildCounterpartyEmailHtml(input) {
           ${noteBlock}
         </div>
 
+        ${letterBlock}
+
         <div style="margin-top:18px;padding:22px 24px;border-radius:28px;background:#0F121B;border:1px solid rgba(139,108,255,0.28);">
-          <div style="font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#8E96A8;margin-bottom:8px;">Current open total</div>
+          <div style="font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#8E96A8;margin-bottom:8px;">${isManualSummary ? "Selected total" : "Current open total"}</div>
           <div style="font-size:34px;font-weight:800;letter-spacing:-0.03em;color:#F8FAFC;">${escapeHtml(summary.netAmountLabel)}</div>
-          <div style="margin-top:6px;font-size:14px;color:#B6BDCD;line-height:1.6;">${escapeHtml(summary.netText)} across ${summary.recordCount} open record${summary.recordCount === 1 ? "" : "s"}.</div>
+          <div style="margin-top:6px;font-size:14px;color:#B6BDCD;line-height:1.6;">${escapeHtml(summary.netText)} across ${summary.recordCount} ${isManualSummary ? "selected" : "open"} record${summary.recordCount === 1 ? "" : "s"}.</div>
         </div>
 
         ${pdfLine}
@@ -220,23 +247,31 @@ function buildCounterpartyEmailHtml(input) {
 }
 function buildCounterpartyEmailText(input) {
     const summary = buildLedgerEmailSummary(input);
-    const directionLabel = input.direction === "owed_to_me" ? "Expected from you" : "Owed to you";
+    const isManualSummary = input.mode === "manual_summary";
+    const directionLabel = isManualSummary
+        ? "Selected statement net"
+        : input.direction === "owed_to_me"
+            ? "Expected from you"
+            : "Owed to you";
     return [
         "Aeon finance record",
         "",
         `Hi ${input.recipientName},`,
-        `${input.ownerName} added a new ledger record with you.`,
+        isManualSummary
+            ? `${input.ownerName} shared selected ledger records with you.`
+            : `${input.ownerName} added a new ledger record with you.`,
         "",
-        "New record",
-        `${directionLabel}: ${formatCurrency(input.amount, input.currency)}`,
-        `Purpose: ${input.purpose}`,
+        isManualSummary ? "Selected records" : "New record",
+        `${directionLabel}: ${isManualSummary ? summary.netAmountLabel : formatCurrency(input.amount, input.currency)}`,
+        isManualSummary ? `Selected records: ${summary.recordCount}` : `Purpose: ${input.purpose}`,
         `Recorded on: ${formatOccurredAt(input.occurredAt)}`,
         input.note ? `Note: ${input.note}` : null,
+        input.letterMessage ? `Message: ${input.letterMessage}` : null,
         "",
-        "Current open total",
+        isManualSummary ? "Selected total" : "Current open total",
         `${summary.netText}: ${summary.netAmountLabel}`,
-        `Open records: ${summary.recordCount}`,
-        summary.hasStatement ? "A PDF statement is attached with previous open records, the new record, and the current total." : null,
+        `${isManualSummary ? "Selected" : "Open"} records: ${summary.recordCount}`,
+        summary.hasStatement ? "A PDF statement is attached with the ledger records and total." : null,
         "",
         `Shared by: ${input.ownerName}${input.ownerEmail ? ` (${input.ownerEmail})` : ""}`,
         "",
@@ -255,18 +290,19 @@ function buildLedgerEmailSummary(input) {
         occurredAt: input.occurredAt,
         createdAt: input.occurredAt
     };
-    const records = input.openRecords?.length ? input.openRecords : [fallbackRecord];
-    const currency = records[0]?.currency ?? input.currency;
-    const owedToOwner = records
+    const records = getStatementRecords(input);
+    const summaryRecords = records.length ? records : [fallbackRecord];
+    const currency = summaryRecords[0]?.currency ?? input.currency;
+    const owedToOwner = summaryRecords
         .filter((record) => record.direction === "owed_to_me")
         .reduce((total, record) => total + Number(record.amount), 0);
-    const ownerOwes = records
+    const ownerOwes = summaryRecords
         .filter((record) => record.direction === "i_owe")
         .reduce((total, record) => total + Number(record.amount), 0);
     const netRecipientOwes = owedToOwner - ownerOwes;
     const base = {
-        recordCount: records.length,
-        hasStatement: Boolean(input.openRecords?.length)
+        recordCount: summaryRecords.length,
+        hasStatement: records.length > 0
     };
     if (netRecipientOwes > 0) {
         return {
@@ -287,6 +323,9 @@ function buildLedgerEmailSummary(input) {
         netText: "Open balance is settled",
         netAmountLabel: formatCurrency(0, currency)
     };
+}
+function getStatementRecords(input) {
+    return input.statementRecords ?? input.openRecords ?? [];
 }
 function buildStatementFilename(ownerName, recipientName) {
     return `aeon-ledger-${toFilenamePart(ownerName)}-${toFilenamePart(recipientName)}.pdf`;

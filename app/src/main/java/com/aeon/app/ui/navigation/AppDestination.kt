@@ -714,6 +714,18 @@ object LedgerEmailPreferenceDestination : AppDestination {
     }
 }
 
+object LedgerManualEmailDestination : AppDestination {
+    override val route: String = "ledger_manual_email/{${AeonNavArgs.COUNTERPARTY_ID}}"
+    override val baseRoute: String = "ledger_manual_email"
+    override val title: String = "Send Email"
+    override val graph: String = AeonGraphs.DETAIL
+    override val group: AeonDestinationGroup = AeonDestinationGroup.Detail
+
+    fun createRoute(counterpartyId: String): String {
+        return AeonRouteBuilder.path(baseRoute, counterpartyId)
+    }
+}
+
 object PrivacySettingsDestination : AppDestination {
     override val route: String = "privacy_settings"
     override val baseRoute: String = "privacy_settings"
@@ -817,6 +829,7 @@ object AeonDestinations {
         RecommendationDetailDestination,
         LedgerCounterpartyDetailDestination,
         LedgerEmailPreferenceDestination,
+        LedgerManualEmailDestination,
         AiChatDestination
     )
 

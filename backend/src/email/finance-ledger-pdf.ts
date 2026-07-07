@@ -22,8 +22,11 @@ export type FinanceLedgerStatementPdfInput = {
   ownerName: string;
   ownerEmail?: string | undefined;
   recipientName: string;
-  newRecordId: string;
+  newRecordId?: string | undefined;
   records: FinanceLedgerStatementRecord[];
+  statementTitle?: string | undefined;
+  tableTitle?: string | undefined;
+  letterMessage?: string | undefined;
 };
 
 type LedgerTotals = {
@@ -63,7 +66,7 @@ export async function buildFinanceLedgerStatementPdf(
     info: {
       Title: "Aeon Ledger Statement",
       Author: "Aeon",
-      Subject: "Open ledger records"
+      Subject: input.statementTitle ?? "Ledger records"
     }
   });
   const chunks: Buffer[] = [];
@@ -78,6 +81,7 @@ export async function buildFinanceLedgerStatementPdf(
   drawBackground(doc);
   drawHeader(doc, input);
   drawSummary(doc, input);
+  drawLetter(doc, input);
   drawRecordsTable(doc, input);
   drawFooter(doc);
 
@@ -112,7 +116,7 @@ function drawHeader(
   doc.font("Helvetica-Bold")
     .fontSize(34)
     .fillColor(colors.ink)
-    .text("Open ledger account", page.margin, 104, {
+    .text(input.statementTitle ?? "Open ledger account", page.margin, 104, {
       width: 350,
       lineGap: 4
     });
@@ -153,7 +157,10 @@ function drawSummary(
   input: FinanceLedgerStatementPdfInput
 ): void {
   const totals = summarize(input.records);
-  const newRecord = input.records.find((record) => record.id === input.newRecordId) ?? input.records.at(-1);
+  const newRecord = input.newRecordId
+    ? input.records.find((record) => record.id === input.newRecordId)
+    : undefined;
+  const primaryRecord = newRecord ?? input.records.at(-1);
   const totalLabel = totals.netRecipientOwes > 0
     ? "You owe"
     : totals.netRecipientOwes < 0
@@ -167,9 +174,15 @@ function drawSummary(
     x: page.margin,
     y: 250,
     width: 250,
-    title: "New record",
-    value: newRecord ? formatCurrency(Number(newRecord.amount), newRecord.currency) : formatCurrency(0, totals.currency),
-    caption: newRecord ? truncate(newRecord.purpose, 70) : "No new record found",
+    title: input.newRecordId ? "New record" : "Selected records",
+    value: primaryRecord
+      ? formatCurrency(input.newRecordId ? Number(primaryRecord.amount) : Math.abs(totals.netRecipientOwes), primaryRecord.currency)
+      : formatCurrency(0, totals.currency),
+    caption: input.newRecordId
+      ? primaryRecord
+        ? truncate(primaryRecord.purpose, 70)
+        : "No new record found"
+      : `${input.records.length} selected record${input.records.length === 1 ? "" : "s"}`,
     accent: colors.gold
   });
 
@@ -177,11 +190,41 @@ function drawSummary(
     x: page.margin + 272,
     y: 250,
     width: 250,
-    title: "Open total",
+    title: input.newRecordId ? "Open total" : "Selected total",
     value: totalAmount,
-    caption: `${totalLabel} | ${input.records.length} open record${input.records.length === 1 ? "" : "s"}`,
+    caption: `${totalLabel} | ${input.records.length} ${input.newRecordId ? "open" : "selected"} record${input.records.length === 1 ? "" : "s"}`,
     accent: totals.netRecipientOwes >= 0 ? colors.brand : colors.success
   });
+}
+
+function drawLetter(
+  doc: PDFKit.PDFDocument,
+  input: FinanceLedgerStatementPdfInput
+): void {
+  if (!input.letterMessage?.trim()) {
+    return;
+  }
+
+  const x = page.margin;
+  const y = 364;
+  const width = page.width - page.margin * 2;
+
+  doc.roundedRect(x, y, width, 54, 18).fill("#10131D").stroke(colors.line);
+  doc.font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor(colors.gold)
+    .text(`MESSAGE FROM ${input.ownerName.toUpperCase()}`, x + 16, y + 12, {
+      width: width - 32,
+      characterSpacing: 1.2
+    });
+  doc.font("Helvetica")
+    .fontSize(10)
+    .fillColor(colors.muted)
+    .text(truncate(input.letterMessage, 190), x + 16, y + 28, {
+      width: width - 32,
+      height: 18,
+      ellipsis: true
+    });
 }
 
 function drawMetricCard(
@@ -219,7 +262,7 @@ function drawRecordsTable(
   doc: PDFKit.PDFDocument,
   input: FinanceLedgerStatementPdfInput
 ): void {
-  let y = 386;
+  let y = input.letterMessage?.trim() ? 456 : 386;
   const x = page.margin;
   const tableWidth = page.width - page.margin * 2;
   const columns = {
@@ -230,7 +273,7 @@ function drawRecordsTable(
   };
   const purposeWidth = tableWidth - columns.date - columns.type - columns.amount - columns.status - 30;
 
-  drawTableHeader(doc, x, y, tableWidth);
+  drawTableHeader(doc, x, y, tableWidth, input.tableTitle ?? "Open records");
   y += 34;
 
   input.records.forEach((record, index) => {
@@ -239,11 +282,11 @@ function drawRecordsTable(
       drawBackground(doc);
       drawFooter(doc);
       y = 56;
-      drawTableHeader(doc, x, y, tableWidth);
+      drawTableHeader(doc, x, y, tableWidth, input.tableTitle ?? "Open records");
       y += 34;
     }
 
-    const isNew = record.id === input.newRecordId;
+    const isNew = Boolean(input.newRecordId && record.id === input.newRecordId);
     const rowHeight = 46;
     doc.save();
     doc.roundedRect(x, y, tableWidth, rowHeight, 15)
@@ -281,8 +324,8 @@ function drawRecordsTable(
 
     doc.font("Helvetica-Bold")
       .fontSize(8)
-      .fillColor(isNew ? colors.gold : colors.success)
-      .text(isNew ? "NEW" : "OPEN", x + tableWidth - columns.status - 4, y + 16, {
+      .fillColor(isNew ? colors.gold : record.status === "open" ? colors.success : colors.faint)
+      .text(isNew ? "NEW" : record.status.toUpperCase(), x + tableWidth - columns.status - 4, y + 16, {
         width: columns.status,
         align: "center"
       });
@@ -312,11 +355,17 @@ function drawRecordsTable(
     });
 }
 
-function drawTableHeader(doc: PDFKit.PDFDocument, x: number, y: number, width: number): void {
+function drawTableHeader(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  width: number,
+  title: string
+): void {
   doc.font("Helvetica-Bold")
     .fontSize(12)
     .fillColor(colors.ink)
-    .text("Open records", x, y - 26, { width });
+    .text(title, x, y - 26, { width });
   doc.roundedRect(x, y, width, 28, 14).fill("#0F121B").stroke(colors.line);
   doc.font("Helvetica-Bold")
     .fontSize(8)

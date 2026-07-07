@@ -34,6 +34,7 @@ import com.aeon.app.ui.screens.finance.AeonFinanceEntryDetailRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceOverviewRoute
 import com.aeon.app.ui.screens.finance.AeonFinanceRoute
 import com.aeon.app.ui.screens.finance.AeonLedgerEmailPreferenceRoute
+import com.aeon.app.ui.screens.finance.AeonLedgerManualEmailRoute
 import com.aeon.app.ui.screens.finance.FinanceTopBarConfig
 import com.aeon.app.ui.screens.focus.AeonFocusRoute
 import com.aeon.app.ui.screens.focus.AeonFocusRoutineRecordsRoute
@@ -564,7 +565,8 @@ private fun NavGraphBuilder.aeonDetailRoutes(
     ) { entry ->
         AeonFinanceCounterpartyDetailRoute(
             counterpartyId = entry.stringArg(AeonNavArgs.COUNTERPARTY_ID),
-            onOpenEmailPreferences = navigationState::navigateToLedgerEmailPreference
+            onOpenEmailPreferences = navigationState::navigateToLedgerEmailPreference,
+            onOpenManualEmail = navigationState::navigateToLedgerManualEmail
         )
     }
 
@@ -574,6 +576,16 @@ private fun NavGraphBuilder.aeonDetailRoutes(
     ) { entry ->
         AeonLedgerEmailPreferenceRoute(
             counterpartyId = entry.stringArg(AeonNavArgs.COUNTERPARTY_ID)
+        )
+    }
+
+    composable(
+        route = LedgerManualEmailDestination.route,
+        arguments = listOf(requiredStringArgument(AeonNavArgs.COUNTERPARTY_ID))
+    ) { entry ->
+        AeonLedgerManualEmailRoute(
+            counterpartyId = entry.stringArg(AeonNavArgs.COUNTERPARTY_ID),
+            onBack = navigationState::navigateBack
         )
     }
 }

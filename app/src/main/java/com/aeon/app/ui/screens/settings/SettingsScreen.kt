@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.SmartToy
+import androidx.compose.material.icons.outlined.SyncProblem
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -80,6 +81,7 @@ fun AeonSettingsRoute(
     onOpenPrivacySettings: () -> Unit = {},
     onOpenAppearanceSettings: () -> Unit = {},
     onOpenDataBackupSettings: () -> Unit = {},
+    onOpenSyncConflicts: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -334,6 +336,13 @@ fun AeonSettingsRoute(
                 subtitle = "Exports, restores, local resilience, and backup workflow.",
                 leadingIcon = rememberVectorPainter(Icons.Outlined.Backup),
                 onClick = onOpenDataBackupSettings
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f))
+            AeonListItem(
+                title = "Sync Conflicts",
+                subtitle = "Review records that changed on multiple devices.",
+                leadingIcon = rememberVectorPainter(Icons.Outlined.SyncProblem),
+                onClick = onOpenSyncConflicts
             )
         }
 

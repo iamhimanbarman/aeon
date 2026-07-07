@@ -50,6 +50,7 @@ import com.aeon.app.ui.screens.notifications.NotificationInboxRoute
 import com.aeon.app.ui.screens.notifications.NotificationPreferenceRoute
 import com.aeon.app.ui.screens.notifications.NotificationSettingsRoute
 import com.aeon.app.ui.screens.settings.AeonSettingsRoute
+import com.aeon.app.ui.screens.settings.SyncConflictsRoute
 import com.aeon.app.ui.screens.tasks.AeonStandaloneAddTaskRoute
 import com.aeon.app.ui.screens.tasks.AeonTaskDetailRoute
 import com.aeon.app.ui.screens.tasks.AeonTaskRoute
@@ -706,6 +707,12 @@ private fun NavGraphBuilder.aeonSettingsRoutes(
         )
     }
 
+    composable(SyncConflictsDestination.route) {
+        SyncConflictsRoute(
+            onBack = navigationState::navigateBack
+        )
+    }
+
     composable(AboutAeonDestination.route) {
         AeonDetailPlaceholderRoute(
             title = AboutAeonDestination.title,
@@ -911,6 +918,7 @@ private fun SettingsRoute(
         onOpenPrivacySettings = navigationState::navigateToPrivacySettings,
         onOpenAppearanceSettings = navigationState::navigateToAppearanceSettings,
         onOpenDataBackupSettings = navigationState::navigateToDataBackupSettings,
+        onOpenSyncConflicts = navigationState::navigateToSyncConflicts,
         onOpenAbout = navigationState::navigateToAboutAeon
     )
 }

@@ -24,6 +24,9 @@ import com.aeon.app.data.local.database.entities.MedicineDoseLogEntity
 import com.aeon.app.data.local.database.entities.MedicineEntity
 import com.aeon.app.data.local.database.entities.MoodEntryEntity
 import com.aeon.app.data.local.database.entities.NotificationEntity
+import com.aeon.app.data.local.database.entities.AeonSyncConflictEntity
+import com.aeon.app.data.local.database.entities.AeonSyncOutboxEntity
+import com.aeon.app.data.local.database.entities.AeonSyncStateEntity
 import com.aeon.app.data.local.database.entities.TaskEntity
 import com.aeon.app.data.local.database.entities.TaskCompletionLogEntity
 import com.aeon.app.data.local.database.entities.TaskProjectEntity
@@ -65,6 +68,9 @@ interface TaskDao {
 
     @Upsert
     suspend fun upsertSubtasks(subtasks: List<TaskSubtaskEntity>)
+
+    @Upsert
+    suspend fun upsertSubtask(subtask: TaskSubtaskEntity)
 
     @Upsert
     suspend fun upsertReminder(reminder: TaskReminderEntity)
@@ -400,6 +406,9 @@ interface TaskDao {
     @Query("DELETE FROM task_subtasks WHERE task_id = :taskId")
     suspend fun deleteSubtasksForTask(taskId: String)
 
+    @Query("DELETE FROM task_subtasks WHERE id = :subtaskId")
+    suspend fun deleteSubtask(subtaskId: String)
+
     @Transaction
     suspend fun replaceTaskSubtasks(taskId: String, subtasks: List<TaskSubtaskEntity>) {
         deleteSubtasksForTask(taskId)
@@ -460,6 +469,15 @@ interface FocusDao {
         """
     )
     fun observeFocusSessionById(id: String): Flow<FocusSessionEntity?>
+
+    @Query(
+        """
+        SELECT * FROM focus_sessions
+        WHERE id = :id
+        LIMIT 1
+        """
+    )
+    suspend fun getFocusSessionById(id: String): FocusSessionEntity?
 
     @Query(
         """
@@ -1537,6 +1555,19 @@ interface FinanceDao {
 
     @Query(
         """
+        UPDATE finance_accounts
+        SET deleted_at = :deletedAt,
+            updated_at = :deletedAt
+        WHERE id = :accountId
+        """
+    )
+    suspend fun softDeleteAccount(
+        accountId: String,
+        deletedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
         UPDATE finance_categories
         SET label = :label,
             icon_key = :iconKey,
@@ -1576,6 +1607,32 @@ interface FinanceDao {
     )
     suspend fun softDeleteBudget(
         budgetId: String,
+        deletedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
+        UPDATE finance_counterparties
+        SET deleted_at = :deletedAt,
+            updated_at = :deletedAt
+        WHERE id = :counterpartyId
+        """
+    )
+    suspend fun softDeleteCounterparty(
+        counterpartyId: String,
+        deletedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
+        UPDATE finance_counterparty_records
+        SET deleted_at = :deletedAt,
+            updated_at = :deletedAt
+        WHERE id = :recordId
+        """
+    )
+    suspend fun softDeleteCounterpartyRecord(
+        recordId: String,
         deletedAt: Instant = Instant.now()
     )
 
@@ -1945,4 +2002,127 @@ interface AeonSettingsDao {
         """
     )
     suspend fun clearSettings()
+}
+
+
+// ----------------------------------------------------
+// Sync
+// ----------------------------------------------------
+
+@Dao
+interface AeonSyncDao {
+
+    @Upsert
+    suspend fun upsertSyncState(state: AeonSyncStateEntity)
+
+    @Upsert
+    suspend fun upsertOutboxEntry(entry: AeonSyncOutboxEntity)
+
+    @Upsert
+    suspend fun upsertConflict(conflict: AeonSyncConflictEntity)
+
+    @Query(
+        """
+        SELECT * FROM aeon_sync_state
+        WHERE entity_type = :entityType
+        AND entity_id = :entityId
+        LIMIT 1
+        """
+    )
+    suspend fun getSyncState(
+        entityType: String,
+        entityId: String
+    ): AeonSyncStateEntity?
+
+    @Query(
+        """
+        SELECT * FROM aeon_sync_outbox
+        WHERE status IN ('PENDING_CREATE', 'PENDING_UPDATE', 'PENDING_DELETE', 'FAILED')
+        ORDER BY created_at ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun getPendingOutboxEntries(limit: Int = 50): List<AeonSyncOutboxEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM aeon_sync_outbox
+        WHERE status IN ('PENDING_CREATE', 'PENDING_UPDATE', 'PENDING_DELETE', 'FAILED')
+        """
+    )
+    fun observePendingOutboxCount(): Flow<Int>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM aeon_sync_outbox
+        WHERE entity_type = :entityType
+        AND entity_id = :entityId
+        AND status IN ('PENDING_CREATE', 'PENDING_UPDATE', 'PENDING_DELETE', 'FAILED')
+        """
+    )
+    suspend fun countPendingOutboxForEntity(
+        entityType: String,
+        entityId: String
+    ): Int
+
+    @Query(
+        """
+        SELECT * FROM aeon_sync_conflicts
+        WHERE resolved_at IS NULL
+        ORDER BY detected_at DESC
+        """
+    )
+    fun observeUnresolvedConflicts(): Flow<List<AeonSyncConflictEntity>>
+
+    @Query(
+        """
+        UPDATE aeon_sync_outbox
+        SET status = :status,
+            last_sync_attempt_at = :attemptedAt,
+            updated_at = :attemptedAt
+        WHERE id IN (:ids)
+        """
+    )
+    suspend fun markOutboxEntriesStatus(
+        ids: List<String>,
+        status: String,
+        attemptedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
+        UPDATE aeon_sync_outbox
+        SET status = 'FAILED',
+            attempt_count = attempt_count + 1,
+            last_sync_attempt_at = :attemptedAt,
+            sync_error = :error,
+            updated_at = :attemptedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun markOutboxEntryFailed(
+        id: String,
+        error: String,
+        attemptedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
+        DELETE FROM aeon_sync_outbox
+        WHERE id = :id
+        """
+    )
+    suspend fun deleteOutboxEntry(id: String)
+
+    @Query(
+        """
+        UPDATE aeon_sync_conflicts
+        SET resolved_at = :resolvedAt
+        WHERE id = :conflictId
+        """
+    )
+    suspend fun markConflictResolved(
+        conflictId: String,
+        resolvedAt: Instant = Instant.now()
+    )
 }

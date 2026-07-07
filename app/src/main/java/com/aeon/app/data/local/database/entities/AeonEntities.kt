@@ -1466,6 +1466,145 @@ data class AeonInsightEntity(
 
 
 // ----------------------------------------------------
+// Sync Metadata
+// ----------------------------------------------------
+
+@Entity(
+    tableName = "aeon_sync_state",
+    indices = [
+        Index(value = ["sync_status"], name = "index_aeon_sync_state_status"),
+        Index(value = ["entity_type", "entity_id"], unique = true, name = "index_aeon_sync_state_entity"),
+        Index(value = ["last_synced_at"], name = "index_aeon_sync_state_last_synced")
+    ]
+)
+data class AeonSyncStateEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+
+    @ColumnInfo(name = "entity_type")
+    val entityType: String,
+
+    @ColumnInfo(name = "entity_id")
+    val entityId: String,
+
+    @ColumnInfo(name = "server_id")
+    val serverId: String? = null,
+
+    @ColumnInfo(name = "user_id")
+    val userId: String? = null,
+
+    @ColumnInfo(name = "server_revision")
+    val serverRevision: Long? = null,
+
+    @ColumnInfo(name = "sync_status")
+    val syncStatus: String = SyncStatusStorage.LocalOnly,
+
+    @ColumnInfo(name = "last_synced_at")
+    val lastSyncedAt: Instant? = null,
+
+    @ColumnInfo(name = "last_sync_attempt_at")
+    val lastSyncAttemptAt: Instant? = null,
+
+    @ColumnInfo(name = "sync_error")
+    val syncError: String? = null,
+
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Instant = Instant.now()
+)
+
+@Entity(
+    tableName = "aeon_sync_outbox",
+    indices = [
+        Index(value = ["status", "created_at"], name = "index_aeon_sync_outbox_status_created"),
+        Index(value = ["entity_type", "entity_id"], name = "index_aeon_sync_outbox_entity"),
+        Index(value = ["idempotency_key"], unique = true, name = "index_aeon_sync_outbox_idempotency")
+    ]
+)
+data class AeonSyncOutboxEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+
+    @ColumnInfo(name = "entity_type")
+    val entityType: String,
+
+    @ColumnInfo(name = "entity_id")
+    val entityId: String,
+
+    @ColumnInfo(name = "operation")
+    val operation: String,
+
+    @ColumnInfo(name = "payload_json")
+    val payloadJson: String,
+
+    @ColumnInfo(name = "base_revision")
+    val baseRevision: Long? = null,
+
+    @ColumnInfo(name = "idempotency_key")
+    val idempotencyKey: String,
+
+    @ColumnInfo(name = "status")
+    val status: String = SyncStatusStorage.PendingCreate,
+
+    @ColumnInfo(name = "attempt_count")
+    val attemptCount: Int = 0,
+
+    @ColumnInfo(name = "last_sync_attempt_at")
+    val lastSyncAttemptAt: Instant? = null,
+
+    @ColumnInfo(name = "sync_error")
+    val syncError: String? = null,
+
+    @ColumnInfo(name = "created_at")
+    val createdAt: Instant = Instant.now(),
+
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Instant = Instant.now()
+)
+
+@Entity(
+    tableName = "aeon_sync_conflicts",
+    indices = [
+        Index(value = ["resolved_at"], name = "index_aeon_sync_conflicts_resolved"),
+        Index(value = ["entity_type", "entity_id"], name = "index_aeon_sync_conflicts_entity")
+    ]
+)
+data class AeonSyncConflictEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+
+    @ColumnInfo(name = "entity_type")
+    val entityType: String,
+
+    @ColumnInfo(name = "entity_id")
+    val entityId: String,
+
+    @ColumnInfo(name = "local_payload_json")
+    val localPayloadJson: String,
+
+    @ColumnInfo(name = "server_payload_json")
+    val serverPayloadJson: String,
+
+    @ColumnInfo(name = "base_revision")
+    val baseRevision: Long? = null,
+
+    @ColumnInfo(name = "server_revision")
+    val serverRevision: Long? = null,
+
+    @ColumnInfo(name = "server_deleted_at")
+    val serverDeletedAt: Instant? = null,
+
+    @ColumnInfo(name = "detected_at")
+    val detectedAt: Instant = Instant.now(),
+
+    @ColumnInfo(name = "resolved_at")
+    val resolvedAt: Instant? = null
+)
+
+
+// ----------------------------------------------------
 // Settings
 // ----------------------------------------------------
 
@@ -1795,6 +1934,22 @@ object InsightStatusStorage {
     const val Seen = "seen"
     const val Actioned = "actioned"
     const val Archived = "archived"
+}
+
+object SyncStatusStorage {
+    const val LocalOnly = "LOCAL_ONLY"
+    const val PendingCreate = "PENDING_CREATE"
+    const val PendingUpdate = "PENDING_UPDATE"
+    const val PendingDelete = "PENDING_DELETE"
+    const val Synced = "SYNCED"
+    const val Conflict = "CONFLICT"
+    const val Failed = "FAILED"
+}
+
+object SyncOperationStorage {
+    const val Create = "create"
+    const val Update = "update"
+    const val Delete = "delete"
 }
 
 object SettingsValueTypeStorage {

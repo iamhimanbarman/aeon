@@ -600,6 +600,9 @@ class AeonNavigationState(
         navigateToRoute(DataBackupSettingsDestination.route)
     }
 
+    fun navigateToSyncConflicts() {
+        navigateToRoute(SyncConflictsDestination.route)
+    }
 
     fun navigateToAboutAeon() {
         navigateToRoute(AboutAeonDestination.route)

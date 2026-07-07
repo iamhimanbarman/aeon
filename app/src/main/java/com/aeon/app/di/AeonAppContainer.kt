@@ -13,6 +13,7 @@ import com.aeon.app.data.local.database.AeonDatabase
 import com.aeon.app.data.auth.AuthRepository
 import com.aeon.app.data.repository.AeonRepositories
 import com.aeon.app.data.seed.AeonSeedData
+import com.aeon.app.data.sync.AeonSyncScheduler
 import com.aeon.app.data.task.AndroidTaskReminderScheduler
 import com.aeon.app.data.focus.AndroidFocusRoutineReminderScheduler
 import com.aeon.app.data.ai.AiPreferences
@@ -91,7 +92,12 @@ class DefaultAeonAppContainer(
     }
 
     override val repositories: AeonRepositories by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        AeonRepositories(database)
+        AeonRepositories(
+            database = database,
+            onSyncQueued = {
+                AeonSyncScheduler.requestNow(appContext)
+            }
+        )
     }
 
     override val authRepository: AuthRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

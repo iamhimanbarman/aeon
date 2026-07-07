@@ -214,6 +214,25 @@ class AuthRepository(
         _sessionState.value = AuthSessionState.SignedOut
     }
 
+    suspend fun getFreshAuthenticatedSession(): AuthSession? {
+        return withContext(Dispatchers.IO) {
+            val storedSession = store.read() ?: return@withContext null
+            if (!api.isConfigured()) return@withContext null
+
+            if (!storedSession.isExpiringSoon()) {
+                _sessionState.value = AuthSessionState.Authenticated(storedSession)
+                return@withContext storedSession
+            }
+
+            runCatching {
+                api.refreshSession(storedSession.refreshToken)
+            }.onSuccess { session ->
+                persistSession(session)
+                return@withContext session
+            }.getOrNull()
+        }
+    }
+
     suspend fun getGoogleAuthUrl(): String {
         return withContext(Dispatchers.IO) {
             ensureConfigured()

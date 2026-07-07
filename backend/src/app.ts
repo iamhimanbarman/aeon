@@ -12,6 +12,7 @@ import { registerHealthRoutes } from "./modules/health/routes.js";
 import { registerFinanceRoutes } from "./modules/finance/routes.js";
 import { registerFocusRoutes } from "./modules/focus/routes.js";
 import { registerTaskRoutes } from "./modules/tasks/routes.js";
+import { registerSyncRoutes } from "./modules/sync/routes.js";
 
 export function buildApp() {
   const app = Fastify({
@@ -91,6 +92,7 @@ export function buildApp() {
   app.register(registerFinanceRoutes, { prefix: "/v1/finance" });
   app.register(registerFocusRoutes, { prefix: "/v1/focus" });
   app.register(registerTaskRoutes, { prefix: "/v1/tasks" });
+  app.register(registerSyncRoutes, { prefix: "/v1/sync" });
 
   return app;
 }

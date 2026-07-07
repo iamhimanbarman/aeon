@@ -5,6 +5,7 @@ import com.aeon.app.core.notifications.AeonNotificationInitializer
 import com.aeon.app.core.notifications.AeonNotificationActionHandler
 import com.aeon.app.core.notifications.AeonNotificationFeatureActionDelegate
 import com.aeon.app.core.notifications.AeonNotificationStartupPolicy
+import com.aeon.app.data.sync.AeonSyncScheduler
 import com.aeon.app.di.AeonAppContainer
 import com.aeon.app.di.DefaultAeonAppContainer
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +79,9 @@ class AeonApp : Application() {
                 rescheduleOnForegroundWhenNeeded = false
             )
         )
+
+        AeonSyncScheduler.install(this)
+        AeonSyncScheduler.requestNow(this)
     }
 
     override fun onTerminate() {

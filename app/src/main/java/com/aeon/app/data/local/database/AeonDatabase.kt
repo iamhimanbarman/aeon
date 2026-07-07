@@ -20,6 +20,7 @@ import com.aeon.app.data.local.database.dao.HealthDao
 import com.aeon.app.data.local.database.dao.JournalDao
 import com.aeon.app.data.local.database.dao.MoodDao
 import com.aeon.app.data.local.database.dao.NotificationDao
+import com.aeon.app.data.local.database.dao.AeonSyncDao
 import com.aeon.app.data.local.database.dao.TaskDao
 import com.aeon.app.data.local.database.entities.AeonInsightEntity
 import com.aeon.app.data.local.database.entities.NewsArticleEntity
@@ -47,11 +48,15 @@ import com.aeon.app.data.local.database.entities.MedicineDoseLogEntity
 import com.aeon.app.data.local.database.entities.MedicineEntity
 import com.aeon.app.data.local.database.entities.MoodEntryEntity
 import com.aeon.app.data.local.database.entities.NotificationEntity
+import com.aeon.app.data.local.database.entities.AeonSyncConflictEntity
+import com.aeon.app.data.local.database.entities.AeonSyncOutboxEntity
+import com.aeon.app.data.local.database.entities.AeonSyncStateEntity
 import com.aeon.app.data.local.database.entities.TaskEntity
 import com.aeon.app.data.local.database.entities.TaskCompletionLogEntity
 import com.aeon.app.data.local.database.entities.TaskProjectEntity
 import com.aeon.app.data.local.database.entities.TaskReminderEntity
 import com.aeon.app.data.local.database.entities.TaskSubtaskEntity
+import com.aeon.app.data.local.security.AeonDatabaseEncryption
 
 /*
  * AEON DATABASE
@@ -117,7 +122,10 @@ import com.aeon.app.data.local.database.entities.TaskSubtaskEntity
         // System
         NotificationEntity::class,
         AeonInsightEntity::class,
-        AeonSettingsEntity::class
+        AeonSettingsEntity::class,
+        AeonSyncStateEntity::class,
+        AeonSyncOutboxEntity::class,
+        AeonSyncConflictEntity::class
     ],
     version = AeonDatabase.DATABASE_VERSION,
     exportSchema = true
@@ -151,9 +159,11 @@ abstract class AeonDatabase : RoomDatabase() {
 
     abstract fun aeonSettingsDao(): AeonSettingsDao
 
+    abstract fun syncDao(): AeonSyncDao
+
     companion object {
         const val DATABASE_NAME: String = "aeon_local.db"
-        const val DATABASE_VERSION: Int = 10
+        const val DATABASE_VERSION: Int = 12
 
         @Volatile
         private var INSTANCE: AeonDatabase? = null
@@ -176,6 +186,12 @@ abstract class AeonDatabase : RoomDatabase() {
                 AeonDatabase::class.java,
                 DATABASE_NAME
             )
+                .openHelperFactory(
+                    AeonDatabaseEncryption.createSupportFactory(
+                        context = context.applicationContext,
+                        databaseName = DATABASE_NAME
+                    )
+                )
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .addMigrations(
                     MIGRATION_1_2,
@@ -186,7 +202,9 @@ abstract class AeonDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
-                    MIGRATION_9_10
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12
                 )
                 .addCallback(AeonDatabaseCallback)
                 .build()
@@ -638,6 +656,110 @@ abstract class AeonDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE finance_counterparties " +
                         "ADD COLUMN email_share_preference TEXT NOT NULL DEFAULT 'all'"
+                )
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS aeon_sync_state (
+                        id TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        server_id TEXT,
+                        user_id TEXT,
+                        server_revision INTEGER,
+                        sync_status TEXT NOT NULL,
+                        last_synced_at INTEGER,
+                        last_sync_attempt_at INTEGER,
+                        sync_error TEXT,
+                        updated_at INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_aeon_sync_state_status " +
+                        "ON aeon_sync_state(sync_status)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_aeon_sync_state_entity " +
+                        "ON aeon_sync_state(entity_type, entity_id)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_aeon_sync_state_last_synced " +
+                        "ON aeon_sync_state(last_synced_at)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS aeon_sync_outbox (
+                        id TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        operation TEXT NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        base_revision INTEGER,
+                        idempotency_key TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        attempt_count INTEGER NOT NULL,
+                        last_sync_attempt_at INTEGER,
+                        sync_error TEXT,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_aeon_sync_outbox_status_created " +
+                        "ON aeon_sync_outbox(status, created_at)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_aeon_sync_outbox_entity " +
+                        "ON aeon_sync_outbox(entity_type, entity_id)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_aeon_sync_outbox_idempotency " +
+                        "ON aeon_sync_outbox(idempotency_key)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS aeon_sync_conflicts (
+                        id TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        local_payload_json TEXT NOT NULL,
+                        server_payload_json TEXT NOT NULL,
+                        base_revision INTEGER,
+                        server_revision INTEGER,
+                        detected_at INTEGER NOT NULL,
+                        resolved_at INTEGER,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_aeon_sync_conflicts_resolved " +
+                        "ON aeon_sync_conflicts(resolved_at)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_aeon_sync_conflicts_entity " +
+                        "ON aeon_sync_conflicts(entity_type, entity_id)"
+                )
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    ALTER TABLE aeon_sync_conflicts
+                    ADD COLUMN server_deleted_at INTEGER
+                    """.trimIndent()
                 )
             }
         }

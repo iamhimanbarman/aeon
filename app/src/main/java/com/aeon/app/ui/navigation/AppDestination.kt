@@ -758,6 +758,14 @@ object DataBackupSettingsDestination : AppDestination {
     override val group: AeonDestinationGroup = AeonDestinationGroup.Settings
 }
 
+object SyncConflictsDestination : AppDestination {
+    override val route: String = "sync_conflicts"
+    override val baseRoute: String = "sync_conflicts"
+    override val title: String = "Sync Conflicts"
+    override val graph: String = AeonGraphs.SETTINGS
+    override val group: AeonDestinationGroup = AeonDestinationGroup.Settings
+}
+
 object AboutAeonDestination : AppDestination {
     override val route: String = "about_aeon"
     override val baseRoute: String = "about_aeon"
@@ -850,6 +858,7 @@ object AeonDestinations {
         NotificationSettingsDestination,
         AppearanceSettingsDestination,
         DataBackupSettingsDestination,
+        SyncConflictsDestination,
         AboutAeonDestination
     )
 

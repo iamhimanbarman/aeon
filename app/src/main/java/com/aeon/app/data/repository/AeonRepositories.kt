@@ -11,6 +11,7 @@ import com.aeon.app.data.local.database.dao.HealthDao
 import com.aeon.app.data.local.database.dao.JournalDao
 import com.aeon.app.data.local.database.dao.MoodDao
 import com.aeon.app.data.local.database.dao.NotificationDao
+import com.aeon.app.data.local.database.dao.AeonSyncDao
 import com.aeon.app.data.local.database.dao.TaskDao
 import com.aeon.app.data.local.database.entities.AeonInsightEntity
 import com.aeon.app.data.local.database.entities.AeonSettingsEntity
@@ -56,6 +57,11 @@ import com.aeon.app.data.local.database.entities.MoodEntryEntity
 import com.aeon.app.data.local.database.entities.NotificationEntity
 import com.aeon.app.data.local.database.entities.NotificationPriorityStorage
 import com.aeon.app.data.local.database.entities.NotificationStatusStorage
+import com.aeon.app.data.local.database.entities.AeonSyncConflictEntity
+import com.aeon.app.data.local.database.entities.AeonSyncOutboxEntity
+import com.aeon.app.data.local.database.entities.AeonSyncStateEntity
+import com.aeon.app.data.local.database.entities.SyncOperationStorage
+import com.aeon.app.data.local.database.entities.SyncStatusStorage
 import com.aeon.app.data.local.database.entities.SettingsValueTypeStorage
 import com.aeon.app.data.local.database.entities.TaskDomainStorage
 import com.aeon.app.data.local.database.entities.TaskEntity
@@ -76,6 +82,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 /*
  * AEON REPOSITORIES
@@ -96,17 +104,19 @@ import java.util.UUID
 // ----------------------------------------------------
 
 class AeonRepositories(
-    database: AeonDatabase
+    database: AeonDatabase,
+    onSyncQueued: (() -> Unit)? = null
 ) {
-    val tasks: TaskRepository = TaskRepository(database.taskDao())
-    val focus: FocusRepository = FocusRepository(database.focusDao())
+    val sync: AeonSyncRepository = AeonSyncRepository(database.syncDao(), onSyncQueued)
+    val tasks: TaskRepository = TaskRepository(database.taskDao(), sync)
+    val focus: FocusRepository = FocusRepository(database.focusDao(), sync)
     val focusRoutines: FocusRoutineRepository = FocusRoutineRepository(database.focusRoutineDao())
     val habits: HabitRepository = HabitRepository(database.habitDao())
     val mood: MoodRepository = MoodRepository(database.moodDao())
     val journal: JournalRepository = JournalRepository(database.journalDao())
     val goals: GoalRepository = GoalRepository(database.goalDao())
     val health: HealthRepository = HealthRepository(database.healthDao())
-    val finance: FinanceRepository = FinanceRepository(database.financeDao())
+    val finance: FinanceRepository = FinanceRepository(database.financeDao(), sync)
     val notifications: AeonNotificationRepository = AeonNotificationRepository(database.notificationDao())
     val insights: AeonInsightRepository = AeonInsightRepository(database.aeonInsightDao())
     val settings: AeonSettingsRepository = AeonSettingsRepository(database.aeonSettingsDao())
@@ -117,7 +127,8 @@ class AeonRepositories(
 // ----------------------------------------------------
 
 class TaskRepository(
-    private val dao: TaskDao
+    private val dao: TaskDao,
+    private val sync: AeonSyncRepository? = null
 ) {
     fun observeTask(id: String): Flow<TaskEntity?> {
         return dao.observeTaskById(id)
@@ -228,8 +239,12 @@ class TaskRepository(
                     position = index,
                     createdAt = now
                 )
-            }
+        }
         dao.createTaskWithSubtasks(resolvedTask, subtasks)
+        sync.safeQueueCreate(SyncEntityTypes.Tasks, resolvedTask.id, resolvedTask.toSyncPayloadJson())
+        subtasks.forEach { subtask ->
+            sync.safeQueueCreate(SyncEntityTypes.TaskSubtasks, subtask.id, subtask.toSyncPayloadJson())
+        }
         return resolvedTask
     }
 
@@ -256,13 +271,13 @@ class TaskRepository(
                 updatedAt = Instant.now()
             )
         val intelligence = TaskIntelligenceEngine.evaluate(sanitized)
-        dao.upsertTask(
-            sanitized.copy(
+        val updated = sanitized.copy(
                 priorityScore = intelligence.score,
                 aiPriorityScore = intelligence.score / 100f,
                 riskLevel = intelligence.riskLevel
             )
-        )
+        dao.upsertTask(updated)
+        sync.safeQueueUpdate(SyncEntityTypes.Tasks, updated.id, updated.toSyncPayloadJson())
     }
 
     suspend fun completeTask(taskId: String): TaskEntity? {
@@ -326,6 +341,22 @@ class TaskRepository(
             nextOccurrence = nextOccurrence,
             nextSubtasks = nextSubtasks
         )
+        sync.safeQueueUpdate(
+            SyncEntityTypes.Tasks,
+            task.id,
+            task.copy(
+                status = TaskStatusStorage.Completed,
+                progress = 1f,
+                completedAt = completedAt,
+                updatedAt = completedAt
+            ).toSyncPayloadJson()
+        )
+        nextOccurrence?.let { next ->
+            sync.safeQueueCreate(SyncEntityTypes.Tasks, next.id, next.toSyncPayloadJson())
+        }
+        nextSubtasks.forEach { subtask ->
+            sync.safeQueueCreate(SyncEntityTypes.TaskSubtasks, subtask.id, subtask.toSyncPayloadJson())
+        }
         return nextOccurrence
     }
 
@@ -415,10 +446,14 @@ class TaskRepository(
 
     suspend fun archiveTask(taskId: String) {
         dao.archiveTask(taskId)
+        dao.getTaskById(taskId)?.let { task ->
+            sync.safeQueueUpdate(SyncEntityTypes.Tasks, task.id, task.toSyncPayloadJson())
+        }
     }
 
     suspend fun deleteTask(taskId: String) {
         dao.softDeleteTask(taskId)
+        sync.safeQueueDelete(SyncEntityTypes.Tasks, taskId)
     }
 }
 
@@ -428,7 +463,8 @@ class TaskRepository(
 // ----------------------------------------------------
 
 class FocusRepository(
-    private val dao: FocusDao
+    private val dao: FocusDao,
+    private val sync: AeonSyncRepository? = null
 ) {
     fun observeSession(id: String): Flow<FocusSessionEntity?> {
         return dao.observeFocusSessionById(id)
@@ -490,6 +526,7 @@ class FocusRepository(
             updatedAt = now
         )
         dao.upsertFocusSession(session)
+        sync.safeQueueCreate(SyncEntityTypes.FocusSessions, session.id, session.toSyncPayloadJson())
         return session
     }
 
@@ -508,14 +545,21 @@ class FocusRepository(
             actualMinutes = actualMinutes.coerceAtLeast(0),
             qualityScore = qualityScore?.coerceIn(0, 100)
         )
+        dao.getFocusSessionById(sessionId)?.let { session ->
+            sync.safeQueueUpdate(SyncEntityTypes.FocusSessions, session.id, session.toSyncPayloadJson())
+        }
     }
 
     suspend fun cancelSession(sessionId: String) {
         dao.cancelFocusSession(sessionId)
+        dao.getFocusSessionById(sessionId)?.let { session ->
+            sync.safeQueueUpdate(SyncEntityTypes.FocusSessions, session.id, session.toSyncPayloadJson())
+        }
     }
 
     suspend fun deleteSession(sessionId: String) {
         dao.softDeleteFocusSession(sessionId)
+        sync.safeQueueDelete(SyncEntityTypes.FocusSessions, sessionId)
     }
 }
 
@@ -1281,7 +1325,8 @@ class HealthRepository(
 // ----------------------------------------------------
 
 class FinanceRepository(
-    private val dao: FinanceDao
+    private val dao: FinanceDao,
+    private val sync: AeonSyncRepository? = null
 ) {
     fun observeActiveCategories(): Flow<List<FinanceCategoryEntity>> {
         return dao.observeActiveCategories()
@@ -1399,6 +1444,7 @@ class FinanceRepository(
             updatedAt = now
         )
         dao.upsertCategory(category)
+        sync.safeQueueCreate(SyncEntityTypes.FinanceCategories, category.id, category.toSyncPayloadJson())
         return category
     }
 
@@ -1426,6 +1472,9 @@ class FinanceRepository(
             iconKey = iconKey.cleanRequired("Category icon"),
             familyKey = familyKey.cleanRequired("Category family")
         )
+        dao.getCategoryById(categoryId)?.let { category ->
+            sync.safeQueueUpdate(SyncEntityTypes.FinanceCategories, category.id, category.toSyncPayloadJson())
+        }
     }
 
     suspend fun deleteCategory(categoryId: String) {
@@ -1450,6 +1499,7 @@ class FinanceRepository(
             categoryId = existingCategory.id,
             deletedAt = now
         )
+        sync.safeQueueDelete(SyncEntityTypes.FinanceCategories, existingCategory.id)
     }
 
     suspend fun createAccount(
@@ -1477,6 +1527,7 @@ class FinanceRepository(
             updatedAt = now
         )
         dao.upsertAccount(account)
+        sync.safeQueueCreate(SyncEntityTypes.FinanceAccounts, account.id, account.toSyncPayloadJson())
         return account
     }
 
@@ -1524,6 +1575,7 @@ class FinanceRepository(
             updatedAt = now
         )
         dao.upsertTransaction(transaction)
+        sync.safeQueueCreate(SyncEntityTypes.FinanceTransactions, transaction.id, transaction.toSyncPayloadJson())
         return transaction
     }
 
@@ -1590,6 +1642,7 @@ class FinanceRepository(
             updatedAt = now
         )
         dao.upsertBudget(budget)
+        sync.safeQueueCreate(SyncEntityTypes.FinanceBudgets, budget.id, budget.toSyncPayloadJson())
         return budget
     }
 
@@ -1618,6 +1671,19 @@ class FinanceRepository(
         )
 
         dao.upsertCounterparty(counterparty)
+        if (existing == null) {
+            sync.safeQueueCreate(
+                SyncEntityTypes.FinanceCounterparties,
+                counterparty.id,
+                counterparty.toSyncPayloadJson()
+            )
+        } else {
+            sync.safeQueueUpdate(
+                SyncEntityTypes.FinanceCounterparties,
+                counterparty.id,
+                counterparty.toSyncPayloadJson()
+            )
+        }
         return counterparty
     }
 
@@ -1647,11 +1713,13 @@ class FinanceRepository(
             email = cleanEmail,
             updatedAt = now
         )
-        return existing.copy(
+        val updated = existing.copy(
             name = cleanName,
             email = cleanEmail,
             updatedAt = now
         )
+        sync.safeQueueUpdate(SyncEntityTypes.FinanceCounterparties, updated.id, updated.toSyncPayloadJson())
+        return updated
     }
 
     suspend fun updateCounterpartyEmailPreference(
@@ -1669,10 +1737,12 @@ class FinanceRepository(
             updatedAt = now
         )
 
-        return existing.copy(
+        val updated = existing.copy(
             emailSharePreference = cleanPreference,
             updatedAt = now
         )
+        sync.safeQueueUpdate(SyncEntityTypes.FinanceCounterparties, updated.id, updated.toSyncPayloadJson())
+        return updated
     }
 
     suspend fun createCounterpartyRecord(
@@ -1713,6 +1783,11 @@ class FinanceRepository(
             updatedAt = now
         )
         dao.upsertCounterpartyRecord(record)
+        sync.safeQueueCreate(
+            SyncEntityTypes.FinanceCounterpartyRecords,
+            record.id,
+            record.toSyncPayloadJson()
+        )
         return record
     }
 
@@ -1778,6 +1853,9 @@ class FinanceRepository(
 
         if (budgets.isNotEmpty()) {
             dao.upsertBudgets(budgets)
+            budgets.forEach { budget ->
+                sync.safeQueueCreate(SyncEntityTypes.FinanceBudgets, budget.id, budget.toSyncPayloadJson())
+            }
         }
     }
 
@@ -1804,10 +1882,12 @@ class FinanceRepository(
 
     suspend fun deleteTransaction(transactionId: String) {
         dao.softDeleteTransaction(transactionId)
+        sync.safeQueueDelete(SyncEntityTypes.FinanceTransactions, transactionId)
     }
 
     suspend fun deleteBudget(budgetId: String) {
         dao.softDeleteBudget(budgetId)
+        sync.safeQueueDelete(SyncEntityTypes.FinanceBudgets, budgetId)
     }
 
     suspend fun setCounterpartyRecordSettled(
@@ -2138,6 +2218,463 @@ class AeonSettingsRepository(
     }
 }
 
+
+// ----------------------------------------------------
+// Sync
+// ----------------------------------------------------
+
+class AeonSyncRepository(
+    private val dao: AeonSyncDao,
+    private val onSyncQueued: (() -> Unit)? = null
+) {
+    fun observePendingOutboxCount(): Flow<Int> {
+        return dao.observePendingOutboxCount()
+    }
+
+    fun observeUnresolvedConflicts(): Flow<List<AeonSyncConflictEntity>> {
+        return dao.observeUnresolvedConflicts()
+    }
+
+    suspend fun queueCreate(
+        entityType: String,
+        entityId: String,
+        payloadJson: String
+    ): AeonSyncOutboxEntity {
+        return queueChange(
+            entityType = entityType,
+            entityId = entityId,
+            operation = SyncOperationStorage.Create,
+            payloadJson = payloadJson
+        )
+    }
+
+    suspend fun queueUpdate(
+        entityType: String,
+        entityId: String,
+        payloadJson: String,
+        baseRevision: Long? = null
+    ): AeonSyncOutboxEntity {
+        return queueChange(
+            entityType = entityType,
+            entityId = entityId,
+            operation = SyncOperationStorage.Update,
+            payloadJson = payloadJson,
+            baseRevision = baseRevision
+        )
+    }
+
+    suspend fun queueDelete(
+        entityType: String,
+        entityId: String,
+        baseRevision: Long? = null
+    ): AeonSyncOutboxEntity {
+        return queueChange(
+            entityType = entityType,
+            entityId = entityId,
+            operation = SyncOperationStorage.Delete,
+            payloadJson = "{}",
+            baseRevision = baseRevision
+        )
+    }
+
+    suspend fun getPendingBatch(limit: Int = 50): List<AeonSyncOutboxEntity> {
+        return dao.getPendingOutboxEntries(limit)
+    }
+
+    suspend fun getBaseRevision(
+        entityType: String,
+        entityId: String
+    ): Long? {
+        return dao.getSyncState(entityType, entityId)?.serverRevision
+    }
+
+    suspend fun hasPendingLocalChange(
+        entityType: String,
+        entityId: String
+    ): Boolean {
+        return dao.countPendingOutboxForEntity(entityType, entityId) > 0
+    }
+
+    suspend fun markPulled(
+        entityType: String,
+        entityId: String,
+        serverRevision: Long,
+        userId: String?,
+        deleted: Boolean = false
+    ) {
+        val now = Instant.now()
+        dao.upsertSyncState(
+            AeonSyncStateEntity(
+                id = AeonId.stable("sync_state", "$entityType:$entityId"),
+                entityType = entityType,
+                entityId = entityId,
+                userId = userId,
+                serverRevision = serverRevision,
+                syncStatus = if (deleted) {
+                    SyncStatusStorage.Synced
+                } else {
+                    SyncStatusStorage.Synced
+                },
+                lastSyncedAt = now,
+                lastSyncAttemptAt = now,
+                updatedAt = now
+            )
+        )
+    }
+
+    suspend fun markSynced(
+        entry: AeonSyncOutboxEntity,
+        serverRevision: Long,
+        userId: String? = null,
+        serverId: String? = null
+    ) {
+        val now = Instant.now()
+        dao.upsertSyncState(
+            AeonSyncStateEntity(
+                id = AeonId.stable("sync_state", "${entry.entityType}:${entry.entityId}"),
+                entityType = entry.entityType,
+                entityId = entry.entityId,
+                serverId = serverId,
+                userId = userId,
+                serverRevision = serverRevision,
+                syncStatus = SyncStatusStorage.Synced,
+                lastSyncedAt = now,
+                lastSyncAttemptAt = now,
+                updatedAt = now
+            )
+        )
+        dao.deleteOutboxEntry(entry.id)
+    }
+
+    suspend fun markConflict(
+        entry: AeonSyncOutboxEntity,
+        serverPayloadJson: String,
+        serverRevision: Long?,
+        serverDeletedAt: Instant? = null
+    ) {
+        val now = Instant.now()
+        dao.upsertConflict(
+            AeonSyncConflictEntity(
+                id = AeonId.new("sync_conflict"),
+                entityType = entry.entityType,
+                entityId = entry.entityId,
+                localPayloadJson = entry.payloadJson,
+                serverPayloadJson = serverPayloadJson,
+                baseRevision = entry.baseRevision,
+                serverRevision = serverRevision,
+                serverDeletedAt = serverDeletedAt,
+                detectedAt = now
+            )
+        )
+        dao.upsertSyncState(
+            AeonSyncStateEntity(
+                id = AeonId.stable("sync_state", "${entry.entityType}:${entry.entityId}"),
+                entityType = entry.entityType,
+                entityId = entry.entityId,
+                serverRevision = serverRevision,
+                syncStatus = SyncStatusStorage.Conflict,
+                lastSyncAttemptAt = now,
+                syncError = "Conflict detected. Review required.",
+                updatedAt = now
+            )
+        )
+        dao.deleteOutboxEntry(entry.id)
+    }
+
+    suspend fun markConflictResolved(conflictId: String) {
+        dao.markConflictResolved(conflictId)
+    }
+
+    suspend fun markFailed(
+        entry: AeonSyncOutboxEntity,
+        error: String
+    ) {
+        dao.markOutboxEntryFailed(
+            id = entry.id,
+            error = error.take(240)
+        )
+    }
+
+    private suspend fun queueChange(
+        entityType: String,
+        entityId: String,
+        operation: String,
+        payloadJson: String,
+        baseRevision: Long? = null
+    ): AeonSyncOutboxEntity {
+        val cleanEntityType = entityType.cleanRequired("Entity type")
+        val cleanEntityId = entityId.cleanRequired("Entity id")
+        val now = Instant.now()
+        val status = when (operation) {
+            SyncOperationStorage.Create -> SyncStatusStorage.PendingCreate
+            SyncOperationStorage.Update -> SyncStatusStorage.PendingUpdate
+            SyncOperationStorage.Delete -> SyncStatusStorage.PendingDelete
+            else -> error("Unsupported sync operation.")
+        }
+        val resolvedBaseRevision = baseRevision ?: dao.getSyncState(
+            cleanEntityType,
+            cleanEntityId
+        )?.serverRevision
+        val entry = AeonSyncOutboxEntity(
+            id = AeonId.new("sync_outbox"),
+            entityType = cleanEntityType,
+            entityId = cleanEntityId,
+            operation = operation,
+            payloadJson = payloadJson.ifBlank { "{}" },
+            baseRevision = resolvedBaseRevision,
+            idempotencyKey = AeonId.new("sync_idem"),
+            status = status,
+            createdAt = now,
+            updatedAt = now
+        )
+        dao.upsertOutboxEntry(entry)
+        dao.upsertSyncState(
+            AeonSyncStateEntity(
+                id = AeonId.stable("sync_state", "$cleanEntityType:$cleanEntityId"),
+                entityType = cleanEntityType,
+                entityId = cleanEntityId,
+                serverRevision = resolvedBaseRevision,
+                syncStatus = status,
+                updatedAt = now
+            )
+        )
+        onSyncQueued?.invoke()
+        return entry
+    }
+}
+
+
+// ----------------------------------------------------
+// Sync Payload Helpers
+// ----------------------------------------------------
+
+private object SyncEntityTypes {
+    const val Tasks = "tasks"
+    const val TaskSubtasks = "task_subtasks"
+    const val FocusSessions = "focus_sessions"
+    const val FinanceAccounts = "finance_accounts"
+    const val FinanceCategories = "finance_categories"
+    const val FinanceTransactions = "finance_transactions"
+    const val FinanceBudgets = "finance_budgets"
+    const val FinanceCounterparties = "finance_counterparties"
+    const val FinanceCounterpartyRecords = "finance_counterparty_records"
+}
+
+private suspend fun AeonSyncRepository?.safeQueueCreate(
+    entityType: String,
+    entityId: String,
+    payload: JSONObject
+) {
+    this ?: return
+    runCatching {
+        queueCreate(entityType, entityId, payload.toString())
+    }
+}
+
+private suspend fun AeonSyncRepository?.safeQueueUpdate(
+    entityType: String,
+    entityId: String,
+    payload: JSONObject
+) {
+    this ?: return
+    runCatching {
+        queueUpdate(
+            entityType = entityType,
+            entityId = entityId,
+            payloadJson = payload.toString(),
+            baseRevision = getBaseRevision(entityType, entityId)
+        )
+    }
+}
+
+private suspend fun AeonSyncRepository?.safeQueueDelete(
+    entityType: String,
+    entityId: String
+) {
+    this ?: return
+    runCatching {
+        queueDelete(
+            entityType = entityType,
+            entityId = entityId,
+            baseRevision = getBaseRevision(entityType, entityId)
+        )
+    }
+}
+
+private fun TaskEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .put("title", title)
+        .putNullable("description", description)
+        .put("status", status)
+        .put("priority", priority)
+        .put("domain", domain)
+        .putNullable("projectLabel", projectLabel)
+        .putNullable("projectId", projectId)
+        .putNullable("goalId", goalId)
+        .putNullable("parentTaskId", parentTaskId)
+        .putNullable("dueAt", dueAt)
+        .putNullable("reminderAt", reminderAt)
+        .putNullable("scheduledStartAt", scheduledStartAt)
+        .putNullable("completedAt", completedAt)
+        .putNullable("snoozedUntil", snoozedUntil)
+        .put("snoozeCount", snoozeCount)
+        .put("estimatedMinutes", estimatedMinutes)
+        .put("actualMinutes", actualMinutes)
+        .put("progress", progress)
+        .put("tags", JSONArray(tags))
+        .put("aiPriorityScore", aiPriorityScore)
+        .put("priorityScore", priorityScore)
+        .put("riskLevel", riskLevel)
+        .put("isRecurring", isRecurring)
+        .putNullable("recurrenceRule", recurrenceRule)
+        .put("recurrenceCount", recurrenceCount)
+        .put("isPinned", isPinned)
+        .put("isArchived", isArchived)
+        .put("sortOrder", sortOrder)
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun TaskSubtaskEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .put("taskId", taskId)
+        .put("title", title)
+        .put("isCompleted", isCompleted)
+        .put("position", position)
+        .put("createdAt", createdAt.toString())
+        .putNullable("completedAt", completedAt)
+}
+
+private fun FocusSessionEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .putNullable("taskId", taskId)
+        .putNullable("goalId", goalId)
+        .put("mode", mode)
+        .put("status", status)
+        .put("plannedMinutes", plannedMinutes)
+        .put("actualMinutes", actualMinutes)
+        .put("interruptionCount", interruptionCount)
+        .putNullable("qualityScore", qualityScore)
+        .putNullable("note", note)
+        .put("startedAt", startedAt.toString())
+        .putNullable("endedAt", endedAt)
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun FinanceAccountEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .put("name", name)
+        .put("accountType", accountType)
+        .put("currency", currency)
+        .put("openingBalance", openingBalance.toPlainString())
+        .put("currentBalance", currentBalance.toPlainString())
+        .put("isArchived", isArchived)
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun FinanceCategoryEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .put("label", label)
+        .put("iconKey", iconKey)
+        .put("familyKey", familyKey)
+        .put("scope", scope)
+        .put("isDefault", isDefault)
+        .put("sortOrder", sortOrder)
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun FinanceTransactionEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .putNullable("accountId", accountId)
+        .put("transactionType", transactionType)
+        .put("title", title)
+        .putNullable("merchant", merchant)
+        .put("category", category)
+        .put("amount", amount.toPlainString())
+        .put("currency", currency)
+        .putNullable("paymentMethod", paymentMethod)
+        .putNullable("note", note)
+        .put("tags", JSONArray(tags))
+        .putNullable("receiptUri", receiptUri)
+        .put("occurredAt", occurredAt.toString())
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun BudgetEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .put("category", category)
+        .put("budgetLimit", budgetLimit.toPlainString())
+        .put("spentAmount", spentAmount.toPlainString())
+        .put("currency", currency)
+        .put("periodStart", periodStart.toString())
+        .put("periodEnd", periodEnd.toString())
+        .put("alertThreshold", alertThreshold)
+        .put("isActive", isActive)
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun FinanceCounterpartyEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .put("name", name)
+        .putNullable("email", email)
+        .put("emailSharePreference", emailSharePreference)
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun FinanceCounterpartyRecordEntity.toSyncPayloadJson(): JSONObject {
+    return JSONObject()
+        .put("id", id)
+        .putNullable("counterpartyId", counterpartyId)
+        .put("counterpartyName", counterpartyName)
+        .putNullable("counterpartyEmail", counterpartyEmail)
+        .put("direction", direction)
+        .put("purpose", purpose)
+        .putNullable("note", note)
+        .put("amount", amount.toPlainString())
+        .put("currency", currency)
+        .put("status", status)
+        .put("occurredAt", occurredAt.toString())
+        .putNullable("emailSharedAt", emailSharedAt)
+        .putNullable("settledAt", settledAt)
+        .put("createdAt", createdAt.toString())
+        .put("updatedAt", updatedAt.toString())
+        .putNullable("deletedAt", deletedAt)
+}
+
+private fun JSONObject.putNullable(
+    key: String,
+    value: Any?
+): JSONObject {
+    return put(
+        key,
+        when (value) {
+            null -> JSONObject.NULL
+            is Instant -> value.toString()
+            else -> value
+        }
+    )
+}
 
 // ----------------------------------------------------
 // Shared ID + Validation Helpers

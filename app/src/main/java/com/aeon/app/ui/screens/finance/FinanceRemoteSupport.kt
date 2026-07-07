@@ -2,6 +2,7 @@ package com.aeon.app.ui.screens.finance
 
 import com.aeon.app.BuildConfig
 import com.aeon.app.data.local.database.entities.FinanceCategoryScopeStorage
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyEmailPreferenceStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -30,7 +31,8 @@ internal data class FinanceRemoteTransactionQuery(
 internal data class FinanceRemoteCounterpartyInput(
     val id: String? = null,
     val name: String,
-    val email: String
+    val email: String,
+    val emailSharePreference: String = FinanceCounterpartyEmailPreferenceStorage.All
 )
 
 internal data class FinanceRemoteCounterpartyShareInput(
@@ -43,6 +45,7 @@ internal data class FinanceRemoteCounterpartyShareInput(
     val amount: String,
     val currency: String,
     val note: String? = null,
+    val emailSharePreference: String = FinanceCounterpartyEmailPreferenceStorage.All,
     val occurredAt: String
 )
 
@@ -124,6 +127,7 @@ internal class FinanceRemoteClient(
             .put("purpose", input.purpose)
             .put("amount", input.amount)
             .put("currency", input.currency)
+            .put("emailSharePreference", input.emailSharePreference)
             .put("occurredAt", input.occurredAt)
 
         input.note?.takeIf(String::isNotBlank)?.let { note ->
@@ -150,6 +154,7 @@ internal class FinanceRemoteClient(
         val payload = JSONObject()
             .put("name", input.name)
             .put("email", input.email)
+            .put("emailSharePreference", input.emailSharePreference)
 
         input.id?.takeIf(String::isNotBlank)?.let { id ->
             payload.put("id", id)
@@ -179,6 +184,7 @@ internal class FinanceRemoteClient(
             .put("purpose", input.purpose)
             .put("amount", input.amount)
             .put("currency", input.currency)
+            .put("emailSharePreference", input.emailSharePreference)
             .put("occurredAt", input.occurredAt)
 
         input.id?.takeIf(String::isNotBlank)?.let { id ->

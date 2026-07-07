@@ -3,6 +3,7 @@ import { badRequest, notFound } from "../../lib/errors.js";
 import { buildPrefixedId } from "../../lib/ids.js";
 import { camelizeRecord, camelizeRows } from "../../lib/serialize.js";
 import { ensureFinanceDefaults } from "../bootstrap/service.js";
+const defaultCounterpartyEmailPreference = "all";
 export async function listFinanceCategories(db, userId) {
     await ensureFinanceDefaults(db, userId);
     const rows = await db `
@@ -387,11 +388,17 @@ export async function upsertFinanceCounterparty(db, userId, input) {
     const email = input.email.trim().toLowerCase();
     const name = input.name.trim();
     const counterpartyId = input.id?.trim() || buildPrefixedId("counterparty");
+    const emailSharePreference = input.emailSharePreference ?? null;
     const rows = await db `
     with updated as (
       update finance_counterparties
       set name = ${name},
           email = ${email},
+          email_share_preference = coalesce(
+            ${emailSharePreference},
+            finance_counterparties.email_share_preference,
+            ${defaultCounterpartyEmailPreference}
+          ),
           updated_at = ${now}::timestamptz,
           deleted_at = null
       where user_id = ${userId}::uuid
@@ -403,13 +410,14 @@ export async function upsertFinanceCounterparty(db, userId, input) {
     ),
     inserted as (
       insert into finance_counterparties (
-        user_id, id, name, email, created_at, updated_at
+        user_id, id, name, email, email_share_preference, created_at, updated_at
       )
       select
         ${userId}::uuid,
         ${counterpartyId},
         ${name},
         ${email},
+        ${emailSharePreference ?? defaultCounterpartyEmailPreference},
         ${now}::timestamptz,
         ${now}::timestamptz
       where not exists (select 1 from updated)
@@ -426,7 +434,8 @@ export async function createFinanceCounterpartyRecord(db, userId, input) {
     const counterparty = await upsertFinanceCounterparty(db, userId, {
         id: input.counterpartyId,
         name: input.counterpartyName,
-        email: input.counterpartyEmail
+        email: input.counterpartyEmail,
+        emailSharePreference: input.emailSharePreference
     });
     const now = new Date().toISOString();
     const recordId = input.id?.trim() || buildPrefixedId("ledger");
@@ -467,6 +476,67 @@ export async function createFinanceCounterpartyRecord(db, userId, input) {
         record: camelizeRecord(rows[0] ?? {}),
         recordId
     };
+}
+export async function getFinanceLedgerOwnerProfile(db, userId) {
+    const rows = await db `
+    select display_name, email
+    from app_users
+    where id = ${userId}::uuid
+      and deleted_at is null
+    limit 1
+  `;
+    return {
+        displayName: rows[0]?.display_name ?? null,
+        email: rows[0]?.email ?? null
+    };
+}
+export async function listOpenFinanceCounterpartyRecordsForEmail(db, userId, counterpartyId) {
+    const rows = await db `
+    select
+      id,
+      direction,
+      purpose,
+      note,
+      amount::text as amount,
+      currency,
+      status,
+      occurred_at,
+      created_at
+    from finance_counterparty_records
+    where user_id = ${userId}::uuid
+      and counterparty_id = ${counterpartyId}
+      and status = 'open'
+      and deleted_at is null
+    order by occurred_at asc, created_at asc
+  `;
+    return rows.map((row) => ({
+        id: row.id,
+        direction: row.direction,
+        purpose: row.purpose,
+        note: row.note,
+        amount: row.amount,
+        currency: row.currency,
+        status: row.status,
+        occurredAt: serializeDate(row.occurred_at),
+        createdAt: serializeDate(row.created_at)
+    }));
+}
+export function shouldSendFinanceCounterpartyEmail(preference, direction) {
+    switch (preference) {
+        case "all":
+            return true;
+        case "lend":
+            return direction === "owed_to_me";
+        case "borrow":
+            return direction === "i_owe";
+        case "off":
+            return false;
+        default:
+            return true;
+    }
+}
+function serializeDate(value) {
+    return value instanceof Date ? value.toISOString() : value;
 }
 export async function markFinanceCounterpartyRecordShared(db, userId, recordId, emailSharedAt = new Date().toISOString()) {
     await db `

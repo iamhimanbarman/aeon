@@ -26,6 +26,26 @@ type FinanceTransactionQuery = z.infer<typeof financeTransactionQuerySchema>;
 type FinanceBudgetQuery = z.infer<typeof financeBudgetQuerySchema>;
 type FinanceCounterpartyInput = z.infer<typeof financeCounterpartyInputSchema>;
 type FinanceCounterpartyRecordInput = z.infer<typeof financeCounterpartyRecordInputSchema>;
+type FinanceCounterpartyEmailPreference = "all" | "lend" | "borrow" | "off";
+
+const defaultCounterpartyEmailPreference: FinanceCounterpartyEmailPreference = "all";
+
+export type FinanceLedgerOwnerProfile = {
+  displayName: string | null;
+  email: string | null;
+};
+
+export type FinanceCounterpartyOpenRecord = {
+  id: string;
+  direction: "owed_to_me" | "i_owe";
+  purpose: string;
+  note: string | null;
+  amount: string;
+  currency: string;
+  status: "open" | "settled";
+  occurredAt: string;
+  createdAt: string;
+};
 
 export async function listFinanceCategories(db: Sql<Record<string, unknown>>, userId: string) {
   await ensureFinanceDefaults(db, userId);
@@ -512,12 +532,18 @@ export async function upsertFinanceCounterparty(
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
   const counterpartyId = input.id?.trim() || buildPrefixedId("counterparty");
+  const emailSharePreference = input.emailSharePreference ?? null;
 
   const rows = await db<Record<string, unknown>[]>`
     with updated as (
       update finance_counterparties
       set name = ${name},
           email = ${email},
+          email_share_preference = coalesce(
+            ${emailSharePreference},
+            finance_counterparties.email_share_preference,
+            ${defaultCounterpartyEmailPreference}
+          ),
           updated_at = ${now}::timestamptz,
           deleted_at = null
       where user_id = ${userId}::uuid
@@ -529,13 +555,14 @@ export async function upsertFinanceCounterparty(
     ),
     inserted as (
       insert into finance_counterparties (
-        user_id, id, name, email, created_at, updated_at
+        user_id, id, name, email, email_share_preference, created_at, updated_at
       )
       select
         ${userId}::uuid,
         ${counterpartyId},
         ${name},
         ${email},
+        ${emailSharePreference ?? defaultCounterpartyEmailPreference},
         ${now}::timestamptz,
         ${now}::timestamptz
       where not exists (select 1 from updated)
@@ -558,7 +585,8 @@ export async function createFinanceCounterpartyRecord(
   const counterparty = await upsertFinanceCounterparty(db, userId, {
     id: input.counterpartyId,
     name: input.counterpartyName,
-    email: input.counterpartyEmail
+    email: input.counterpartyEmail,
+    emailSharePreference: input.emailSharePreference
   });
   const now = new Date().toISOString();
   const recordId = input.id?.trim() || buildPrefixedId("ledger");
@@ -601,6 +629,93 @@ export async function createFinanceCounterpartyRecord(
     record: camelizeRecord(rows[0] ?? {}),
     recordId
   };
+}
+
+export async function getFinanceLedgerOwnerProfile(
+  db: Sql<Record<string, unknown>>,
+  userId: string
+): Promise<FinanceLedgerOwnerProfile> {
+  const rows = await db<{ display_name: string | null; email: string | null }[]>`
+    select display_name, email
+    from app_users
+    where id = ${userId}::uuid
+      and deleted_at is null
+    limit 1
+  `;
+
+  return {
+    displayName: rows[0]?.display_name ?? null,
+    email: rows[0]?.email ?? null
+  };
+}
+
+export async function listOpenFinanceCounterpartyRecordsForEmail(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  counterpartyId: string
+): Promise<FinanceCounterpartyOpenRecord[]> {
+  const rows = await db<{
+    id: string;
+    direction: "owed_to_me" | "i_owe";
+    purpose: string;
+    note: string | null;
+    amount: string;
+    currency: string;
+    status: "open" | "settled";
+    occurred_at: Date | string;
+    created_at: Date | string;
+  }[]>`
+    select
+      id,
+      direction,
+      purpose,
+      note,
+      amount::text as amount,
+      currency,
+      status,
+      occurred_at,
+      created_at
+    from finance_counterparty_records
+    where user_id = ${userId}::uuid
+      and counterparty_id = ${counterpartyId}
+      and status = 'open'
+      and deleted_at is null
+    order by occurred_at asc, created_at asc
+  `;
+
+  return rows.map((row) => ({
+    id: row.id,
+    direction: row.direction,
+    purpose: row.purpose,
+    note: row.note,
+    amount: row.amount,
+    currency: row.currency,
+    status: row.status,
+    occurredAt: serializeDate(row.occurred_at),
+    createdAt: serializeDate(row.created_at)
+  }));
+}
+
+export function shouldSendFinanceCounterpartyEmail(
+  preference: unknown,
+  direction: string
+): boolean {
+  switch (preference) {
+    case "all":
+      return true;
+    case "lend":
+      return direction === "owed_to_me";
+    case "borrow":
+      return direction === "i_owe";
+    case "off":
+      return false;
+    default:
+      return true;
+  }
+}
+
+function serializeDate(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 export async function markFinanceCounterpartyRecordShared(

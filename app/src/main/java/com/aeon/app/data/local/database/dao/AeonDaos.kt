@@ -1398,6 +1398,48 @@ interface FinanceDao {
 
     @Query(
         """
+        SELECT * FROM finance_counterparties
+        WHERE id = :counterpartyId
+        AND deleted_at IS NULL
+        LIMIT 1
+        """
+    )
+    suspend fun getCounterpartyById(counterpartyId: String): FinanceCounterpartyEntity?
+
+    @Query(
+        """
+        UPDATE finance_counterparties
+        SET name = :name,
+            email = :email,
+            updated_at = :updatedAt
+        WHERE id = :counterpartyId
+        AND deleted_at IS NULL
+        """
+    )
+    suspend fun updateCounterpartyProfile(
+        counterpartyId: String,
+        name: String,
+        email: String,
+        updatedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
+        UPDATE finance_counterparties
+        SET email_share_preference = :preference,
+            updated_at = :updatedAt
+        WHERE id = :counterpartyId
+        AND deleted_at IS NULL
+        """
+    )
+    suspend fun updateCounterpartyEmailPreference(
+        counterpartyId: String,
+        preference: String,
+        updatedAt: Instant = Instant.now()
+    )
+
+    @Query(
+        """
         SELECT * FROM budgets
         WHERE id = :budgetId
         AND deleted_at IS NULL

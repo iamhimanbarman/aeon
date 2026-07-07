@@ -544,6 +544,10 @@ class AeonNavigationState(
         navigateToRoute(LedgerCounterpartyDetailDestination.createRoute(counterpartyId))
     }
 
+    fun navigateToLedgerEmailPreference(counterpartyId: String) {
+        navigateToRoute(LedgerEmailPreferenceDestination.createRoute(counterpartyId))
+    }
+
 
     fun navigateToJournalEntryDetail(
         entryId: String

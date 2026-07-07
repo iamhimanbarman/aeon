@@ -153,7 +153,7 @@ abstract class AeonDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME: String = "aeon_local.db"
-        const val DATABASE_VERSION: Int = 9
+        const val DATABASE_VERSION: Int = 10
 
         @Volatile
         private var INSTANCE: AeonDatabase? = null
@@ -185,7 +185,8 @@ abstract class AeonDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
-                    MIGRATION_8_9
+                    MIGRATION_8_9,
+                    MIGRATION_9_10
                 )
                 .addCallback(AeonDatabaseCallback)
                 .build()
@@ -628,6 +629,15 @@ abstract class AeonDatabase : RoomDatabase() {
                     WHERE counterparty_id IS NULL
                     AND deleted_at IS NULL
                     """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE finance_counterparties " +
+                        "ADD COLUMN email_share_preference TEXT NOT NULL DEFAULT 'all'"
                 )
             }
         }

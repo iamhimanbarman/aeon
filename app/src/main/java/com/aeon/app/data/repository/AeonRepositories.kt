@@ -23,6 +23,7 @@ import com.aeon.app.data.local.database.entities.FinanceCategoryFamilyStorage
 import com.aeon.app.data.local.database.entities.FinanceCategoryScopeStorage
 import com.aeon.app.data.local.database.entities.FinanceCategoryStorage
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyEntity
+import com.aeon.app.data.local.database.entities.FinanceCounterpartyEmailPreferenceStorage
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordEntity
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyRecordStatusStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
@@ -1620,6 +1621,60 @@ class FinanceRepository(
         return counterparty
     }
 
+    suspend fun updateCounterpartyProfile(
+        counterpartyId: String,
+        name: String,
+        email: String
+    ): FinanceCounterpartyEntity {
+        AeonValidation.financeCounterparty(
+            name = name,
+            email = email
+        ).throwIfInvalid()
+
+        val existing = dao.getCounterpartyById(counterpartyId)
+            ?: error("Ledger user not found.")
+        val cleanName = name.cleanRequired("Counterparty name")
+        val cleanEmail = email.cleanRequired("Counterparty email").lowercase()
+        val emailOwner = dao.getCounterpartyByEmail(cleanEmail)
+        require(emailOwner == null || emailOwner.id == counterpartyId) {
+            "Email already exists."
+        }
+
+        val now = Instant.now()
+        dao.updateCounterpartyProfile(
+            counterpartyId = counterpartyId,
+            name = cleanName,
+            email = cleanEmail,
+            updatedAt = now
+        )
+        return existing.copy(
+            name = cleanName,
+            email = cleanEmail,
+            updatedAt = now
+        )
+    }
+
+    suspend fun updateCounterpartyEmailPreference(
+        counterpartyId: String,
+        preference: String
+    ): FinanceCounterpartyEntity {
+        val existing = dao.getCounterpartyById(counterpartyId)
+            ?: error("Ledger user not found.")
+        val cleanPreference = preference.cleanCounterpartyEmailPreference()
+        val now = Instant.now()
+
+        dao.updateCounterpartyEmailPreference(
+            counterpartyId = counterpartyId,
+            preference = cleanPreference,
+            updatedAt = now
+        )
+
+        return existing.copy(
+            emailSharePreference = cleanPreference,
+            updatedAt = now
+        )
+    }
+
     suspend fun createCounterpartyRecord(
         counterpartyId: String? = null,
         counterpartyName: String,
@@ -2109,6 +2164,16 @@ private fun String.cleanRequired(
     val clean = trim()
     require(clean.isNotBlank()) { "$label cannot be blank." }
     return clean
+}
+
+private fun String.cleanCounterpartyEmailPreference(): String {
+    return when (trim()) {
+        FinanceCounterpartyEmailPreferenceStorage.All -> FinanceCounterpartyEmailPreferenceStorage.All
+        FinanceCounterpartyEmailPreferenceStorage.Lend -> FinanceCounterpartyEmailPreferenceStorage.Lend
+        FinanceCounterpartyEmailPreferenceStorage.Borrow -> FinanceCounterpartyEmailPreferenceStorage.Borrow
+        FinanceCounterpartyEmailPreferenceStorage.Off -> FinanceCounterpartyEmailPreferenceStorage.Off
+        else -> error("Invalid email rule.")
+    }
 }
 
 private fun String?.cleanOptional(): String? {

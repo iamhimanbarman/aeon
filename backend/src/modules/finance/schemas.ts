@@ -13,6 +13,7 @@ export const financeAccountTypeSchema = z.enum(["cash", "bank", "wallet", "upi"]
 export const financeTransactionTypeSchema = z.enum(["expense", "income", "transfer"]);
 export const financeCategoryScopeSchema = z.enum(["expense", "income"]);
 export const financeCounterpartyDirectionSchema = z.enum(["owed_to_me", "i_owe"]);
+export const financeCounterpartyEmailPreferenceSchema = z.enum(["all", "lend", "borrow", "off"]);
 export const financeCategoryFamilySchema = z.enum([
   "core",
   "food",
@@ -98,7 +99,8 @@ export const financeCounterpartyInputSchema = z.object({
     .string()
     .trim()
     .email("Enter a valid email address.")
-    .max(320)
+    .max(320),
+  emailSharePreference: financeCounterpartyEmailPreferenceSchema.optional()
 });
 
 export const financeCounterpartyShareInputSchema = z.object({
@@ -113,6 +115,7 @@ export const financeCounterpartyShareInputSchema = z.object({
   amount: moneyInputSchema,
   currency: currencySchema.default("INR"),
   note: optionalTrimmedStringSchema,
+  emailSharePreference: financeCounterpartyEmailPreferenceSchema.optional(),
   occurredAt: timestampSchema.default(new Date().toISOString())
 });
 

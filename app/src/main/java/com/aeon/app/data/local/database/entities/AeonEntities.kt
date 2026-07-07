@@ -1256,6 +1256,9 @@ data class FinanceCounterpartyEntity(
     @ColumnInfo(name = "email")
     val email: String? = null,
 
+    @ColumnInfo(name = "email_share_preference")
+    val emailSharePreference: String = FinanceCounterpartyEmailPreferenceStorage.All,
+
     @ColumnInfo(name = "created_at")
     val createdAt: Instant = Instant.now(),
 
@@ -1739,6 +1742,13 @@ object FinanceTransactionTypeStorage {
 object FinanceCounterpartyDirectionStorage {
     const val OwedToMe = "owed_to_me"
     const val IOwe = "i_owe"
+}
+
+object FinanceCounterpartyEmailPreferenceStorage {
+    const val All = "all"
+    const val Lend = "lend"
+    const val Borrow = "borrow"
+    const val Off = "off"
 }
 
 object FinanceCounterpartyRecordStatusStorage {

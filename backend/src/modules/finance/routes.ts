@@ -12,12 +12,15 @@ import {
   deleteFinanceTransaction,
   getFinanceOverview,
   getFinanceTransaction,
+  getFinanceLedgerOwnerProfile,
   listFinanceAccounts,
   listFinanceBudgets,
   listFinanceCategories,
+  listOpenFinanceCounterpartyRecordsForEmail,
   listFinanceTransactionMonths,
   listFinanceTransactions,
   markFinanceCounterpartyRecordShared,
+  shouldSendFinanceCounterpartyEmail,
   upsertFinanceCounterparty,
   setFinanceBudgetsForMonth
 } from "./repository.js";
@@ -119,29 +122,49 @@ export async function registerFinanceRoutes(app: FastifyInstance): Promise<void>
       "Invalid finance counterparty record payload."
     );
 
-    const ownerName = request.authUser?.displayName
-      ?? request.authUser?.email
-      ?? "An Aeon user";
+    const ownerProfile = await getFinanceLedgerOwnerProfile(app.db, request.authUser!.userId);
+    const ownerEmail = ownerProfile.email ?? request.authUser?.email;
+    const ownerName = resolveFinanceLedgerOwnerName(
+      ownerProfile.displayName,
+      request.authUser?.displayName,
+      ownerEmail
+    );
     const result = await createFinanceCounterpartyRecord(app.db, request.authUser!.userId, body);
     const existingEmailSharedAt = toIsoStringOrNull(result.record.emailSharedAt);
-    let emailStatus: "sent" | "already_sent" | "failed" = existingEmailSharedAt ? "already_sent" : "failed";
+    const shouldEmail = shouldSendFinanceCounterpartyEmail(
+      result.counterparty.emailSharePreference,
+      body.direction
+    );
+    let emailStatus: "sent" | "already_sent" | "failed" | "skipped" = existingEmailSharedAt
+      ? "already_sent"
+      : shouldEmail
+        ? "failed"
+        : "skipped";
     let emailed = Boolean(existingEmailSharedAt);
     let emailSharedAt = existingEmailSharedAt;
     let emailErrorCode: string | null = null;
 
-    if (!emailSharedAt) {
+    if (!emailSharedAt && shouldEmail) {
       try {
+        const openRecords = await listOpenFinanceCounterpartyRecordsForEmail(
+          app.db,
+          request.authUser!.userId,
+          String(result.counterparty.id)
+        );
+
         await sendFinanceCounterpartyEmail({
           recipientEmail: body.counterpartyEmail,
           recipientName: body.counterpartyName,
           ownerName,
-          ownerEmail: request.authUser?.email,
+          ownerEmail,
           direction: body.direction,
           purpose: body.purpose,
           amount: body.amount,
           currency: body.currency,
           occurredAt: body.occurredAt,
-          note: body.note
+          note: body.note,
+          newRecordId: result.recordId,
+          openRecords
         });
         emailed = true;
         emailStatus = "sent";
@@ -189,15 +212,28 @@ export async function registerFinanceRoutes(app: FastifyInstance): Promise<void>
       "Invalid finance account-share payload."
     );
 
-    const ownerName = request.authUser?.displayName
-      ?? request.authUser?.email
-      ?? "An Aeon user";
+    const ownerProfile = await getFinanceLedgerOwnerProfile(app.db, request.authUser!.userId);
+    const ownerEmail = ownerProfile.email ?? request.authUser?.email;
+    const ownerName = resolveFinanceLedgerOwnerName(
+      ownerProfile.displayName,
+      request.authUser?.displayName,
+      ownerEmail
+    );
+
+    if (!shouldSendFinanceCounterpartyEmail(body.emailSharePreference, body.direction)) {
+      return {
+        ok: true,
+        emailed: false,
+        emailStatus: "skipped",
+        recipientEmail: body.counterpartyEmail
+      };
+    }
 
     await sendFinanceCounterpartyEmail({
       recipientEmail: body.counterpartyEmail,
       recipientName: body.counterpartyName,
       ownerName,
-      ownerEmail: request.authUser?.email,
+      ownerEmail,
       direction: body.direction,
       purpose: body.purpose,
       amount: body.amount,
@@ -225,4 +261,24 @@ function toIsoStringOrNull(value: unknown): string | null {
   }
 
   return null;
+}
+
+function resolveFinanceLedgerOwnerName(
+  databaseDisplayName: string | null | undefined,
+  tokenDisplayName: string | null | undefined,
+  email: string | null | undefined
+): string {
+  const name = databaseDisplayName?.trim() || tokenDisplayName?.trim();
+
+  if (name) {
+    return name;
+  }
+
+  const emailName = email
+    ?.split("@")[0]
+    ?.replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return emailName || "Aeon member";
 }

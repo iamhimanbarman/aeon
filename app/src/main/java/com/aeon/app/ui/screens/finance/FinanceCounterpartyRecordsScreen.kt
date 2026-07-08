@@ -79,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aeon.app.data.auth.AuthRepository
+import com.aeon.app.data.auth.AuthSessionState
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyDirectionStorage
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyEmailPreferenceStorage
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyEntity
@@ -249,6 +250,8 @@ fun AeonFinanceCounterpartyDetailRoute(
     val records by remember(container, counterpartyId) {
         container.repositories.finance.observeCounterpartyRecords(counterpartyId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val authState by container.authRepository.sessionState.collectAsStateWithLifecycle()
+    val canUseCloudEmail = authState is AuthSessionState.Authenticated && remoteClient.isConfigured()
 
     var showAddEntrySheet by rememberSaveable { mutableStateOf(false) }
     var direction by rememberSaveable { mutableStateOf(FinanceCounterpartyDirectionStorage.OwedToMe) }
@@ -404,7 +407,7 @@ fun AeonFinanceCounterpartyDetailRoute(
             )
         } else if (currentCounterparty != null && freshAccessToken.isNullOrBlank()) {
             toastHostState.showWarning(
-                title = "Cloud sync pending",
+                title = "Sign in to send",
                 duration = AeonToastDuration.Short
             )
         } else if (currentCounterparty != null && !remoteClient.isConfigured()) {
@@ -430,6 +433,7 @@ fun AeonFinanceCounterpartyDetailRoute(
         counterparty = counterparty,
         summary = summary,
         records = filteredRecords,
+        canUseCloudEmail = canUseCloudEmail,
         selectedFilter = selectedFilter,
         onFilterChange = { selectedFilterKey = it.key },
         selectionMode = selectionMode,
@@ -698,7 +702,7 @@ fun AeonFinanceCounterpartyDetailRoute(
 
                                     if (freshAccessToken.isNullOrBlank()) {
                                         toastHostState.showWarning(
-                                            title = "Cloud sync pending",
+                                            title = "Sign in to send",
                                             duration = AeonToastDuration.Short
                                         )
                                         return@launch
@@ -1195,6 +1199,20 @@ private enum class LedgerManualEmailStep {
     SelectRecords,
     WriteMessage
 }
+
+private enum class LedgerRecordDeliveryKind {
+    Sent,
+    Pending,
+    SignInRequired,
+    Skipped,
+    NoEmail
+}
+
+@Immutable
+private data class LedgerRecordDeliveryState(
+    val kind: LedgerRecordDeliveryKind,
+    val label: String
+)
 
 private enum class LedgerEmailPreferenceOption(
     val key: String,
@@ -1935,6 +1953,7 @@ private fun LedgerCounterpartyDetailScreen(
     counterparty: FinanceCounterpartyEntity?,
     summary: LedgerCounterpartySummary,
     records: List<FinanceCounterpartyRecordEntity>,
+    canUseCloudEmail: Boolean,
     selectedFilter: LedgerTransactionFilter,
     onFilterChange: (LedgerTransactionFilter) -> Unit,
     selectionMode: Boolean,
@@ -2065,6 +2084,8 @@ private fun LedgerCounterpartyDetailScreen(
                     item {
                         LedgerCounterpartyTransactionTable(
                             records = records,
+                            emailSharePreference = currentCounterparty.emailSharePreference,
+                            canUseCloudEmail = canUseCloudEmail,
                             selectionMode = selectionMode,
                             selectedSettlementRecordIds = selectedSettlementRecordIds,
                             expandedRecordId = expandedRecordId,
@@ -2450,6 +2471,8 @@ private fun LedgerTransactionFilterChip(
 @Composable
 private fun LedgerCounterpartyTransactionTable(
     records: List<FinanceCounterpartyRecordEntity>,
+    emailSharePreference: String,
+    canUseCloudEmail: Boolean,
     selectionMode: Boolean,
     selectedSettlementRecordIds: Set<String>,
     expandedRecordId: String?,
@@ -2474,8 +2497,14 @@ private fun LedgerCounterpartyTransactionTable(
             LedgerTransactionTableHeader()
 
             records.forEachIndexed { index, record ->
+                val deliveryState = record.resolveLedgerDeliveryState(
+                    emailSharePreference = emailSharePreference,
+                    canUseCloudEmail = canUseCloudEmail
+                )
+
                 LedgerCounterpartyRecordBar(
                     record = record,
+                    deliveryState = deliveryState,
                     selected = record.id in selectedSettlementRecordIds,
                     selectionMode = selectionMode,
                     expanded = expandedRecordId == record.id,
@@ -3054,6 +3083,7 @@ private fun LedgerDirectionChip(
 @Composable
 private fun LedgerCounterpartyRecordBar(
     record: FinanceCounterpartyRecordEntity,
+    deliveryState: LedgerRecordDeliveryState,
     selected: Boolean,
     selectionMode: Boolean,
     expanded: Boolean,
@@ -3071,7 +3101,7 @@ private fun LedgerCounterpartyRecordBar(
         colors.warning
     }
     val hasEmail = !record.counterpartyEmail.isNullOrBlank()
-    val emailAccent = if (record.emailSharedAt != null) colors.success else colors.brand
+    val emailAccent = deliveryState.accentColor()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val toastHostState = LocalAeonToastHostState.current
@@ -3233,7 +3263,7 @@ private fun LedgerCounterpartyRecordBar(
                         statusLabel = if (isSettled) "Settled" else "Open",
                         statusAccent = stateAccent,
                         statusIcon = Icons.Outlined.CheckCircle,
-                        deliveryLabel = if (record.emailSharedAt != null) "Sent" else "Pending",
+                        deliveryLabel = deliveryState.label,
                         deliveryAccent = emailAccent,
                         deliveryIcon = Icons.Outlined.MailOutline
                     )
@@ -3348,11 +3378,7 @@ private fun LedgerCounterpartyRecordBar(
 
                         LedgerExpandedLabelValue(
                             label = "Email status",
-                            value = if (record.emailSharedAt != null) {
-                                "Sent ${record.emailSharedAt.toFinanceLedgerTimeLabel()}"
-                            } else {
-                                "Pending"
-                            },
+                            value = record.resolveLedgerDeliveryDetailLabel(deliveryState),
                             valueColor = emailAccent
                         )
                     }
@@ -3780,6 +3806,85 @@ private fun Instant.toFinanceLedgerTimeLabel(): String {
 private fun Instant.toFinanceLedgerDateLabel(): String {
     return atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+}
+
+private fun FinanceCounterpartyRecordEntity.resolveLedgerDeliveryState(
+    emailSharePreference: String,
+    canUseCloudEmail: Boolean
+): LedgerRecordDeliveryState {
+    emailSharedAt?.let {
+        return LedgerRecordDeliveryState(
+            kind = LedgerRecordDeliveryKind.Sent,
+            label = "Sent"
+        )
+    }
+
+    if (counterpartyEmail.isNullOrBlank()) {
+        return LedgerRecordDeliveryState(
+            kind = LedgerRecordDeliveryKind.NoEmail,
+            label = "No email"
+        )
+    }
+
+    if (!shouldSendLedgerEmailForDirection(emailSharePreference, direction)) {
+        return LedgerRecordDeliveryState(
+            kind = LedgerRecordDeliveryKind.Skipped,
+            label = "Skipped"
+        )
+    }
+
+    if (!canUseCloudEmail) {
+        return LedgerRecordDeliveryState(
+            kind = LedgerRecordDeliveryKind.SignInRequired,
+            label = "Sign in"
+        )
+    }
+
+    return LedgerRecordDeliveryState(
+        kind = LedgerRecordDeliveryKind.Pending,
+        label = "Pending"
+    )
+}
+
+private fun FinanceCounterpartyRecordEntity.resolveLedgerDeliveryDetailLabel(
+    state: LedgerRecordDeliveryState
+): String {
+    return when (state.kind) {
+        LedgerRecordDeliveryKind.Sent -> {
+            val sentAt = emailSharedAt?.toFinanceLedgerTimeLabel()
+            if (sentAt == null) "Sent" else "Sent $sentAt"
+        }
+        LedgerRecordDeliveryKind.Pending -> "Waiting for email delivery"
+        LedgerRecordDeliveryKind.SignInRequired -> "Sign in to send this email"
+        LedgerRecordDeliveryKind.Skipped -> "Skipped by email rule"
+        LedgerRecordDeliveryKind.NoEmail -> "Add email to send"
+    }
+}
+
+@Composable
+private fun LedgerRecordDeliveryState.accentColor(): Color {
+    val colors = AeonThemeTokens.colors
+
+    return when (kind) {
+        LedgerRecordDeliveryKind.Sent -> colors.success
+        LedgerRecordDeliveryKind.Pending -> colors.warning
+        LedgerRecordDeliveryKind.SignInRequired -> colors.brand
+        LedgerRecordDeliveryKind.Skipped -> colors.textTertiary
+        LedgerRecordDeliveryKind.NoEmail -> colors.textTertiary
+    }
+}
+
+private fun shouldSendLedgerEmailForDirection(
+    emailSharePreference: String,
+    direction: String
+): Boolean {
+    return when (emailSharePreference) {
+        FinanceCounterpartyEmailPreferenceStorage.All -> true
+        FinanceCounterpartyEmailPreferenceStorage.Lend -> direction == FinanceCounterpartyDirectionStorage.OwedToMe
+        FinanceCounterpartyEmailPreferenceStorage.Borrow -> direction == FinanceCounterpartyDirectionStorage.IOwe
+        FinanceCounterpartyEmailPreferenceStorage.Off -> false
+        else -> true
+    }
 }
 
 private suspend fun resolveFinanceAccessToken(

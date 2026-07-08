@@ -796,6 +796,11 @@ private fun TodayRoute(
         onLogMood = navigationState::navigateToMoodCheckIn,
         onOpenTrack = navigationState::navigateToTrack,
         onOpenInsights = navigationState::navigateToInsights,
+        onOpenFinance = navigationState::navigateToFinance,
+        onOpenLedger = navigationState::navigateToLedger,
+        onOpenTasks = {
+            navigationState.navigateToDestination(TasksDestination)
+        },
         onOpenNotifications = {
             navigationState.navigateToDestination(NotificationInboxDestination)
         },

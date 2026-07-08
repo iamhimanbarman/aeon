@@ -4,6 +4,7 @@ import com.aeon.app.BuildConfig
 import com.aeon.app.data.local.database.entities.FinanceCategoryScopeStorage
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyEmailPreferenceStorage
 import com.aeon.app.data.local.database.entities.FinanceTransactionEntity
+import java.io.IOException
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.MediaType.Companion.toMediaType
@@ -16,6 +17,7 @@ import java.time.Instant
 import java.time.YearMonth
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 internal data class FinanceRemoteTransactionQuery(
@@ -147,7 +149,7 @@ internal class FinanceRemoteClient(
             payload.put("note", note)
         }
 
-        executeJsonObject(
+        executeJsonObjectWithRetry {
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparty-share", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
@@ -157,7 +159,7 @@ internal class FinanceRemoteClient(
                         .toRequestBody("application/json; charset=utf-8".toMediaType())
                 )
                 .build()
-        )
+        }
     }
 
     suspend fun syncCounterparty(
@@ -173,7 +175,7 @@ internal class FinanceRemoteClient(
             payload.put("id", id)
         }
 
-        executeJsonObject(
+        executeJsonObjectWithRetry {
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparties", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
@@ -183,7 +185,7 @@ internal class FinanceRemoteClient(
                         .toRequestBody("application/json; charset=utf-8".toMediaType())
                 )
                 .build()
-        )
+        }
     }
 
     suspend fun syncCounterpartyRecord(
@@ -210,7 +212,7 @@ internal class FinanceRemoteClient(
             payload.put("note", note)
         }
 
-        executeJsonObject(
+        executeJsonObjectWithRetry {
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparty-records", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
@@ -220,7 +222,7 @@ internal class FinanceRemoteClient(
                         .toRequestBody("application/json; charset=utf-8".toMediaType())
                 )
                 .build()
-        )
+        }
     }
 
     suspend fun sendCounterpartyRecordsEmail(
@@ -235,7 +237,7 @@ internal class FinanceRemoteClient(
             payload.put("message", message)
         }
 
-        executeJsonObject(
+        executeJsonObjectWithRetry {
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparty-record-emails", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
@@ -245,7 +247,7 @@ internal class FinanceRemoteClient(
                         .toRequestBody("application/json; charset=utf-8".toMediaType())
                 )
                 .build()
-        )
+        }
     }
 
     suspend fun updateCounterpartyRecordStatus(
@@ -261,7 +263,7 @@ internal class FinanceRemoteClient(
             payload.put("message", message)
         }
 
-        executeJsonObject(
+        executeJsonObjectWithRetry {
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparty-record-status", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
@@ -271,21 +273,21 @@ internal class FinanceRemoteClient(
                         .toRequestBody("application/json; charset=utf-8".toMediaType())
                 )
                 .build()
-        )
+        }
     }
 
     suspend fun deleteCounterpartyRecord(
         accessToken: String,
         recordId: String
     ): JSONObject = withContext(Dispatchers.IO) {
-        executeJsonObject(
+        executeJsonObjectWithRetry {
             Request.Builder()
                 .url(buildUrl("/v1/finance/counterparty-records/$recordId", emptyMap()))
                 .header("Authorization", "Bearer $accessToken")
                 .header("Accept", "application/json")
                 .delete()
                 .build()
-        )
+        }
     }
 
     private fun executeJsonObject(
@@ -311,6 +313,43 @@ internal class FinanceRemoteClient(
         client.newCall(request).execute().use { response ->
             return parseJsonObject(response.body?.string().orEmpty(), response.isSuccessful, response.code)
         }
+    }
+
+    private suspend fun executeJsonObjectWithRetry(
+        maxAttempts: Int = 3,
+        requestBuilder: () -> Request
+    ): JSONObject {
+        var lastNetworkError: Throwable? = null
+
+        repeat(maxAttempts) { attemptIndex ->
+            val attempt = attemptIndex + 1
+
+            try {
+                client.newCall(requestBuilder()).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+
+                    if (response.isSuccessful) {
+                        return if (body.isBlank()) JSONObject() else JSONObject(body)
+                    }
+
+                    if (response.code.isRetryableFinanceMutationStatus() && attempt < maxAttempts) {
+                        lastNetworkError = IOException(parseErrorMessage(body, response.code))
+                    } else {
+                        return parseJsonObject(body, response.isSuccessful, response.code)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                if (!throwable.isRetryableFinanceMutationFailure() || attempt >= maxAttempts) {
+                    throw throwable
+                }
+
+                lastNetworkError = throwable
+            }
+
+            delay(resolveFinanceMutationRetryDelayMs(attempt))
+        }
+
+        throw lastNetworkError ?: IllegalStateException("Finance backend request failed.")
     }
 
     private fun executeJsonArray(
@@ -379,6 +418,22 @@ internal class FinanceRemoteClient(
         }
 
         return if (body.isBlank()) JSONObject() else JSONObject(body)
+    }
+}
+
+private fun Int.isRetryableFinanceMutationStatus(): Boolean {
+    return this == 408 || this == 409 || this == 425 || this == 429 || this in 500..599
+}
+
+private fun Throwable.isRetryableFinanceMutationFailure(): Boolean {
+    return this is IOException
+}
+
+private fun resolveFinanceMutationRetryDelayMs(attempt: Int): Long {
+    return when (attempt) {
+        1 -> 500L
+        2 -> 1_200L
+        else -> 2_000L
     }
 }
 

@@ -1,5 +1,7 @@
 package com.aeon.app.ui.screens.finance
 
+import android.content.ClipData
+import android.content.Context
 import android.util.Patterns
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -17,8 +19,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,16 +35,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.CallReceived
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowOutward
-import androidx.compose.material.icons.outlined.CallReceived
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -64,7 +68,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -84,9 +90,6 @@ import com.aeon.app.ui.components.core.AeonButtonSize
 import com.aeon.app.ui.components.core.AeonButtonVariant
 import com.aeon.app.ui.components.core.AeonCard
 import com.aeon.app.ui.components.core.AeonCardVariant
-import com.aeon.app.ui.components.core.AeonChip
-import com.aeon.app.ui.components.core.AeonChipSize
-import com.aeon.app.ui.components.core.AeonChipVariant
 import com.aeon.app.ui.components.core.AeonTextArea
 import com.aeon.app.ui.components.core.AeonTextField
 import com.aeon.app.ui.components.core.AeonTextFieldVariant
@@ -957,11 +960,20 @@ fun AeonLedgerManualEmailRoute(
                                 title = "Email sent",
                                 duration = AeonToastDuration.Short
                             )
+                            onBack()
                         }
 
                         "queued" -> {
                             toastHostState.showWarning(
                                 title = "Email queued",
+                                duration = AeonToastDuration.Short
+                            )
+                            onBack()
+                        }
+
+                        "failed" -> {
+                            toastHostState.showWarning(
+                                title = "Email failed",
                                 duration = AeonToastDuration.Short
                             )
                         }
@@ -973,7 +985,6 @@ fun AeonLedgerManualEmailRoute(
                             )
                         }
                     }
-                    onBack()
                 } catch (throwable: Throwable) {
                     toastHostState.showError(
                         title = throwable.message.orEmpty().trim().ifBlank { "Email failed" },
@@ -1581,11 +1592,11 @@ private fun LedgerManualEmailRecordRow(
     val interactionSource = remember { MutableInteractionSource() }
 
     Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (selected) accent.copy(alpha = 0.16f) else accent.copy(alpha = 0.08f),
+        shape = RectangleShape,
+        color = colors.surface.copy(alpha = if (selected) 0.94f else 0.84f),
         border = BorderStroke(
             1.dp,
-            if (selected) accent.copy(alpha = 0.4f) else accent.copy(alpha = 0.16f)
+            if (selected) accent.copy(alpha = 0.32f) else colors.borderSoft.copy(alpha = 0.18f)
         )
     ) {
         Row(
@@ -1795,7 +1806,7 @@ private fun LedgerEmailPreferenceOptionCard(
     }
     val icon = when (option) {
         LedgerEmailPreferenceOption.All -> Icons.Outlined.Email
-        LedgerEmailPreferenceOption.Lend -> Icons.Outlined.CallReceived
+        LedgerEmailPreferenceOption.Lend -> Icons.AutoMirrored.Outlined.CallReceived
         LedgerEmailPreferenceOption.Borrow -> Icons.Outlined.ArrowOutward
         LedgerEmailPreferenceOption.Off -> Icons.Outlined.Email
     }
@@ -2716,7 +2727,7 @@ private fun LedgerAddEntrySheet(
                 text = "They owe you",
                 selected = direction == FinanceCounterpartyDirectionStorage.OwedToMe,
                 accent = colors.premiumGold,
-                icon = Icons.Outlined.CallReceived,
+                icon = Icons.AutoMirrored.Outlined.CallReceived,
                 onClick = { onDirectionChange(FinanceCounterpartyDirectionStorage.OwedToMe) }
             )
             LedgerDirectionChip(
@@ -2763,7 +2774,7 @@ private fun LedgerAddEntrySheet(
                     variant = AeonTextFieldVariant.Filled,
                     leadingIcon = {
                         Icon(
-                            imageVector = Icons.Outlined.ReceiptLong,
+                            imageVector = Icons.AutoMirrored.Outlined.ReceiptLong,
                             contentDescription = null
                         )
                     },
@@ -2988,7 +2999,7 @@ private fun LedgerDirectionChip(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LedgerCounterpartyRecordBar(
     record: FinanceCounterpartyRecordEntity,
@@ -3002,23 +3013,35 @@ private fun LedgerCounterpartyRecordBar(
 ) {
     val colors = AeonThemeTokens.colors
     val accent = record.directionAccentColor()
-    val stateAccent = if (record.status == FinanceCounterpartyRecordStatusStorage.Settled) {
+    val isSettled = record.status == FinanceCounterpartyRecordStatusStorage.Settled
+    val stateAccent = if (isSettled) {
         colors.success
     } else {
         colors.warning
     }
+    val hasEmail = !record.counterpartyEmail.isNullOrBlank()
+    val emailAccent = if (record.emailSharedAt != null) colors.success else colors.brand
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val toastHostState = LocalAeonToastHostState.current
     val interactionSource = remember { MutableInteractionSource() }
 
     Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (selected) {
-            accent.copy(alpha = 0.16f)
-        } else {
-            accent.copy(alpha = if (expanded) 0.12f else 0.08f)
-        },
+        shape = RectangleShape,
+        color = colors.surface.copy(
+            alpha = when {
+                selected -> 0.95f
+                expanded -> 0.9f
+                else -> 0.84f
+            }
+        ),
         border = BorderStroke(
             1.dp,
-            if (selected) accent.copy(alpha = 0.42f) else accent.copy(alpha = if (expanded) 0.28f else 0.16f)
+            when {
+                selected -> accent.copy(alpha = 0.34f)
+                expanded -> colors.borderSoft.copy(alpha = 0.28f)
+                else -> colors.borderSoft.copy(alpha = 0.14f)
+            }
         )
     ) {
         Column(
@@ -3148,99 +3171,211 @@ private fun LedgerCounterpartyRecordBar(
                 ) {
                     HorizontalDivider(color = colors.divider.copy(alpha = 0.45f))
 
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    LedgerExpandedSummaryStrip(
+                        typeLabel = record.directionTypeLabel(),
+                        typeAccent = accent,
+                        typeIcon = if (record.direction == FinanceCounterpartyDirectionStorage.OwedToMe) {
+                            Icons.AutoMirrored.Outlined.CallReceived
+                        } else {
+                            Icons.Outlined.ArrowOutward
+                        },
+                        statusLabel = if (isSettled) "Settled" else "Open",
+                        statusAccent = stateAccent,
+                        statusIcon = Icons.Outlined.CheckCircle,
+                        deliveryLabel = if (record.emailSharedAt != null) "Sent" else "Pending",
+                        deliveryAccent = emailAccent,
+                        deliveryIcon = Icons.Outlined.MailOutline
+                    )
+
+                    LedgerExpandedSectionCard(
+                        title = "Transaction details",
+                        icon = Icons.Outlined.Description,
+                        accent = colors.brand
                     ) {
-                        AeonChip(
-                            text = record.directionTypeLabel(),
-                            variant = if (record.direction == FinanceCounterpartyDirectionStorage.OwedToMe) {
-                                AeonChipVariant.Success
-                            } else {
-                                AeonChipVariant.Danger
-                            },
-                            size = AeonChipSize.Compact
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            LedgerExpandedMetricCell(
+                                modifier = Modifier.weight(1f),
+                                label = "Amount",
+                                value = record.signedAmountLabel(),
+                                accent = accent
+                            )
+                            LedgerExpandedDivider()
+                            LedgerExpandedMetricCell(
+                                modifier = Modifier.weight(1f),
+                                label = "Recorded",
+                                value = record.occurredAt.toFinanceLedgerTimeLabel(),
+                                accent = colors.textPrimary
+                            )
+                            LedgerExpandedDivider()
+                            LedgerExpandedMetricCell(
+                                modifier = Modifier.weight(1f),
+                                label = if (isSettled) "Settled at" else "Created at",
+                                value = (
+                                    if (isSettled) {
+                                        record.settledAt ?: record.updatedAt
+                                    } else {
+                                        record.createdAt
+                                    }
+                                ).toFinanceLedgerTimeLabel(),
+                                accent = if (isSettled) stateAccent else colors.textPrimary
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = colors.divider.copy(alpha = 0.38f)
                         )
-                        AeonChip(
-                            text = if (record.status == FinanceCounterpartyRecordStatusStorage.Open) {
-                                "Open"
-                            } else {
-                                "Settled"
-                            },
-                            variant = if (record.status == FinanceCounterpartyRecordStatusStorage.Open) {
-                                AeonChipVariant.Warning
-                            } else {
-                                AeonChipVariant.Success
-                            },
-                            size = AeonChipSize.Compact
+
+                        LedgerExpandedLabelValue(
+                            label = "Purpose",
+                            value = record.purpose
                         )
-                        AeonChip(
-                            text = if (record.emailSharedAt != null) {
-                                "Emailed"
+                    }
+
+                    LedgerExpandedSectionCard(
+                        title = "Contact details",
+                        icon = Icons.Outlined.PersonOutline,
+                        accent = colors.brand
+                    ) {
+                        LedgerExpandedLabelValue(
+                            label = "Name",
+                            value = record.counterpartyName
+                        )
+
+                        if (hasEmail) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 12.dp),
+                                color = colors.divider.copy(alpha = 0.32f)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                LedgerExpandedLabelValue(
+                                    modifier = Modifier.weight(1f),
+                                    label = "Email",
+                                    value = record.counterpartyEmail.orEmpty()
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(colors.surfaceElevated.copy(alpha = 0.92f))
+                                        .combinedClickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = {
+                                                context.copyFinanceEmail(record.counterpartyEmail.orEmpty())
+                                                scope.launch {
+                                                    toastHostState.showSuccess(
+                                                        title = "Email copied",
+                                                        duration = AeonToastDuration.Short
+                                                    )
+                                                }
+                                            }
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentCopy,
+                                        contentDescription = null,
+                                        tint = colors.brand,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = colors.divider.copy(alpha = 0.32f)
+                        )
+
+                        LedgerExpandedLabelValue(
+                            label = "Email status",
+                            value = if (record.emailSharedAt != null) {
+                                "Sent ${record.emailSharedAt.toFinanceLedgerTimeLabel()}"
                             } else {
                                 "Pending"
                             },
-                            variant = if (record.emailSharedAt != null) {
-                                AeonChipVariant.Success
-                            } else {
-                                AeonChipVariant.Outline
-                            },
-                            size = AeonChipSize.Compact
+                            valueColor = emailAccent
                         )
+                    }
+
+                    if (!record.note.isNullOrBlank()) {
+                        LedgerExpandedSectionCard(
+                            title = "Note",
+                            icon = Icons.AutoMirrored.Outlined.ReceiptLong,
+                            accent = colors.brand
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(colors.surfaceElevated.copy(alpha = 0.7f))
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                            ) {
+                                Text(
+                                    text = record.note.orEmpty(),
+                                    style = AeonTextStyles.Caption.copy(color = colors.textPrimary)
+                                )
+                            }
+                        }
                     }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        LedgerExpandedStatCard(
-                            modifier = Modifier.weight(1f),
-                            label = "Amount",
-                            value = record.signedAmountLabel(),
-                            accent = accent
-                        )
-                        LedgerExpandedStatCard(
-                            modifier = Modifier.weight(1f),
-                            label = "State",
-                            value = if (record.status == FinanceCounterpartyRecordStatusStorage.Open) "Open" else "Settled",
-                            accent = stateAccent
-                        )
-                    }
-
-                    LedgerExpandedDetailRow(
-                        label = "Time",
-                        value = record.occurredAt.toFinanceLedgerTimeLabel()
-                    )
-                    if (!record.counterpartyEmail.isNullOrBlank()) {
-                        LedgerExpandedDetailRow(
-                            label = "Email",
-                            value = record.counterpartyEmail
-                        )
-                    }
-                    if (!record.note.isNullOrBlank()) {
-                        LedgerExpandedDetailRow(
-                            label = "Note",
-                            value = record.note
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
                         AeonButton(
-                            text = if (record.status == FinanceCounterpartyRecordStatusStorage.Settled) {
-                                "Reopen"
-                            } else {
-                                "Mark settled"
+                            text = if (hasEmail) "Copy email" else "No email",
+                            onClick = {
+                                if (hasEmail) {
+                                    context.copyFinanceEmail(record.counterpartyEmail.orEmpty())
+                                    scope.launch {
+                                        toastHostState.showSuccess(
+                                            title = "Email copied",
+                                            duration = AeonToastDuration.Short
+                                        )
+                                    }
+                                }
                             },
+                            modifier = Modifier.weight(1f),
+                            variant = AeonButtonVariant.Secondary,
+                            size = AeonButtonSize.Small,
+                            fullWidth = true,
+                            enabled = hasEmail,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        )
+
+                        AeonButton(
+                            text = if (isSettled) "Reopen" else "Mark settled",
                             onClick = onToggleSettled,
-                            variant = if (record.status == FinanceCounterpartyRecordStatusStorage.Settled) {
+                            modifier = Modifier.weight(1f),
+                            variant = if (isSettled) {
                                 AeonButtonVariant.Secondary
                             } else {
                                 AeonButtonVariant.Tonal
                             },
-                            size = AeonButtonSize.Small
+                            size = AeonButtonSize.Small,
+                            fullWidth = true,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         )
                     }
                 }
@@ -3250,21 +3385,90 @@ private fun LedgerCounterpartyRecordBar(
 }
 
 @Composable
-private fun LedgerExpandedStatCard(
+private fun LedgerExpandedSummaryStrip(
+    typeLabel: String,
+    typeAccent: Color,
+    typeIcon: ImageVector,
+    statusLabel: String,
+    statusAccent: Color,
+    statusIcon: ImageVector,
+    deliveryLabel: String,
+    deliveryAccent: Color,
+    deliveryIcon: ImageVector
+) {
+    val colors = AeonThemeTokens.colors
+
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = colors.surface.copy(alpha = 0.76f),
+        border = BorderStroke(1.dp, colors.borderSoft.copy(alpha = 0.24f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LedgerExpandedSummaryMetric(
+                modifier = Modifier.weight(1f),
+                icon = typeIcon,
+                label = "Type",
+                value = typeLabel,
+                accent = typeAccent
+            )
+            LedgerExpandedDivider(height = 42.dp)
+            LedgerExpandedSummaryMetric(
+                modifier = Modifier.weight(1f),
+                icon = statusIcon,
+                label = "Status",
+                value = statusLabel,
+                accent = statusAccent
+            )
+            LedgerExpandedDivider(height = 42.dp)
+            LedgerExpandedSummaryMetric(
+                modifier = Modifier.weight(1f),
+                icon = deliveryIcon,
+                label = "Delivery",
+                value = deliveryLabel,
+                accent = deliveryAccent
+            )
+        }
+    }
+}
+
+@Composable
+private fun LedgerExpandedSummaryMetric(
     modifier: Modifier = Modifier,
+    icon: ImageVector,
     label: String,
     value: String,
     accent: Color
 ) {
     val colors = AeonThemeTokens.colors
 
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surface.copy(alpha = 0.78f))
-            .padding(horizontal = 10.dp, vertical = 10.dp)
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             Text(
                 text = label,
                 style = AeonTextStyles.Micro.copy(color = colors.textTertiary),
@@ -3284,25 +3488,108 @@ private fun LedgerExpandedStatCard(
 }
 
 @Composable
-private fun LedgerExpandedDetailRow(
-    label: String,
-    value: String
+private fun LedgerExpandedSectionCard(
+    title: String,
+    icon: ImageVector,
+    accent: Color,
+    content: @Composable () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top
+    val colors = AeonThemeTokens.colors
+
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = colors.surface.copy(alpha = 0.74f),
+        border = BorderStroke(1.dp, colors.borderSoft.copy(alpha = 0.22f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = title,
+                    style = AeonTextStyles.CardTitle.copy(
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    maxLines = 1
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun LedgerExpandedMetricCell(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    accent: Color
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
             text = label,
-            modifier = Modifier.width(62.dp),
             style = AeonTextStyles.Micro.copy(color = AeonThemeTokens.colors.textTertiary),
             maxLines = 1
         )
         Text(
             text = value,
-            modifier = Modifier.weight(1f),
-            style = AeonTextStyles.Caption.copy(color = AeonThemeTokens.colors.textPrimary)
+            style = AeonTextStyles.Caption.copy(
+                color = accent,
+                fontWeight = FontWeight.Bold
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun LedgerExpandedDivider(
+    height: androidx.compose.ui.unit.Dp = 34.dp
+) {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .height(height)
+            .background(AeonThemeTokens.colors.divider.copy(alpha = 0.36f))
+    )
+}
+
+@Composable
+private fun LedgerExpandedLabelValue(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    valueColor: Color = AeonThemeTokens.colors.textPrimary
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            style = AeonTextStyles.Micro.copy(color = AeonThemeTokens.colors.textTertiary),
+            maxLines = 1
+        )
+        Text(
+            text = value,
+            style = AeonTextStyles.Caption.copy(color = valueColor)
         )
     }
 }
@@ -3421,6 +3708,11 @@ private fun FinanceCounterpartyRecordEntity.directionTypeLabel(): String {
 private fun FinanceCounterpartyRecordEntity.signedAmountLabel(): String {
     val prefix = if (direction == FinanceCounterpartyDirectionStorage.OwedToMe) "+" else "-"
     return prefix + amount.abs().toCurrencyLabel(currency)
+}
+
+private fun Context.copyFinanceEmail(value: String) {
+    val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+    clipboardManager?.setPrimaryClip(ClipData.newPlainText("Aeon ledger email", value))
 }
 
 private fun BigDecimal.toCurrencyLabel(currency: String = "INR"): String {

@@ -51,7 +51,7 @@ type SendFinanceEmailWithQueueFallbackInput = QueueFinanceEmailInput & {
 
 type FinanceEmailSendResult = {
   emailed: boolean;
-  emailStatus: "sent" | "queued";
+  emailStatus: "sent" | "queued" | "failed";
   emailSharedAt: string | null;
   emailQueuedAt: string | null;
   emailErrorCode: string | null;
@@ -60,10 +60,13 @@ type FinanceEmailSendResult = {
 const FINANCE_EMAIL_KIND = "finance_counterparty";
 const MAX_DRAIN_BATCH_SIZE = 6;
 const DRAIN_KICK_COOLDOWN_MS = 15_000;
+const OUTBOX_POLL_INTERVAL_MS = 30_000;
+const MAX_DRAIN_ROUNDS_PER_RUN = 4;
 const STALE_LOCK_MINUTES = 5;
 
 let activeDrainPromise: Promise<void> | null = null;
 let lastDrainKickAt = 0;
+let rerunDrainAfterActiveRun = false;
 
 export async function sendFinanceEmailWithQueueFallback(
   db: Sql<Record<string, unknown>>,
@@ -90,6 +93,29 @@ export async function sendFinanceEmailWithQueueFallback(
       emailErrorCode: null
     };
   } catch (error) {
+    const errorCode = getEmailDeliveryErrorCode(error);
+
+    if (resolveFinanceEmailFailureDisposition(error) === "fail") {
+      options.logger.warn(
+        {
+          userId: options.userId,
+          deliveryKey: options.deliveryKey,
+          recipientEmail: options.input.recipientEmail,
+          recordCount: options.recordIds.length,
+          errorCode
+        },
+        "finance_email_delivery_failed_without_retry"
+      );
+
+      return {
+        emailed: false,
+        emailStatus: "failed",
+        emailSharedAt: null,
+        emailQueuedAt: null,
+        emailErrorCode: errorCode
+      };
+    }
+
     const queuedAt = await queueFinanceEmailOutboxJob(db, {
       userId: options.userId,
       deliveryKey: options.deliveryKey,
@@ -103,7 +129,7 @@ export async function sendFinanceEmailWithQueueFallback(
         deliveryKey: options.deliveryKey,
         recipientEmail: options.input.recipientEmail,
         recordCount: options.recordIds.length,
-        errorCode: getEmailDeliveryErrorCode(error)
+        errorCode
       },
       "finance_email_queued_for_retry"
     );
@@ -115,7 +141,7 @@ export async function sendFinanceEmailWithQueueFallback(
       emailStatus: "queued",
       emailSharedAt: null,
       emailQueuedAt: queuedAt,
-      emailErrorCode: getEmailDeliveryErrorCode(error)
+      emailErrorCode: errorCode
     };
   }
 }
@@ -127,8 +153,12 @@ export function kickFinanceEmailOutboxDrain(
 ): void {
   const now = Date.now();
   const force = options.force === true;
+  const limit = Math.max(1, options.limit ?? MAX_DRAIN_BATCH_SIZE);
 
   if (activeDrainPromise != null) {
+    if (force) {
+      rerunDrainAfterActiveRun = true;
+    }
     return;
   }
 
@@ -137,13 +167,40 @@ export function kickFinanceEmailOutboxDrain(
   }
 
   lastDrainKickAt = now;
-  activeDrainPromise = drainFinanceEmailOutboxJobs(db, logger, options.limit ?? MAX_DRAIN_BATCH_SIZE)
+  activeDrainPromise = drainFinanceEmailOutboxJobs(db, logger, limit)
     .catch((error) => {
       logger.error({ err: error }, "finance_email_outbox_drain_failed");
     })
     .finally(() => {
       activeDrainPromise = null;
+
+      if (rerunDrainAfterActiveRun) {
+        rerunDrainAfterActiveRun = false;
+        queueMicrotask(() => {
+          kickFinanceEmailOutboxDrain(db, logger, { force: true, limit });
+        });
+      }
     });
+}
+
+export function startFinanceEmailOutboxScheduler(
+  db: Sql<Record<string, unknown>>,
+  logger: FastifyBaseLogger,
+  options: { intervalMs?: number; limit?: number } = {}
+): () => void {
+  const intervalMs = Math.max(5_000, options.intervalMs ?? OUTBOX_POLL_INTERVAL_MS);
+  const timer = setInterval(() => {
+    kickFinanceEmailOutboxDrain(db, logger, {
+      force: true,
+      limit: options.limit ?? MAX_DRAIN_BATCH_SIZE
+    });
+  }, intervalMs);
+
+  timer.unref?.();
+
+  return () => {
+    clearInterval(timer);
+  };
 }
 
 export function buildFinanceEmailDeliveryKey(
@@ -158,6 +215,18 @@ export function buildFinanceEmailDeliveryKey(
 export function computeFinanceEmailRetryDelayMs(attempt: number): number {
   const schedule = [45_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 20 * 60_000, 45 * 60_000, 90 * 60_000];
   return schedule[Math.min(Math.max(attempt - 1, 0), schedule.length - 1)] ?? schedule[schedule.length - 1] ?? 90 * 60_000;
+}
+
+export function resolveFinanceEmailFailureDisposition(error: unknown): "queue" | "fail" {
+  return isRetryableEmailDeliveryError(error) ? "queue" : "fail";
+}
+
+export function shouldContinueFinanceEmailDrain(
+  claimedCount: number,
+  limit: number,
+  rerunRequested: boolean
+): boolean {
+  return claimedCount >= Math.max(limit, 1) || rerunRequested;
 }
 
 async function queueFinanceEmailOutboxJob(
@@ -227,10 +296,23 @@ async function drainFinanceEmailOutboxJobs(
   logger: FastifyBaseLogger,
   limit: number
 ): Promise<void> {
-  const jobs = await claimDueFinanceEmailOutboxJobs(db, limit);
+  for (let round = 0; round < MAX_DRAIN_ROUNDS_PER_RUN; round += 1) {
+    const jobs = await claimDueFinanceEmailOutboxJobs(db, limit);
 
-  for (const job of jobs) {
-    await processFinanceEmailOutboxJob(db, logger, job);
+    if (jobs.length === 0) {
+      return;
+    }
+
+    for (const job of jobs) {
+      await processFinanceEmailOutboxJob(db, logger, job);
+    }
+
+    const rerunRequested = rerunDrainAfterActiveRun;
+    rerunDrainAfterActiveRun = false;
+
+    if (!shouldContinueFinanceEmailDrain(jobs.length, limit, rerunRequested)) {
+      return;
+    }
   }
 }
 

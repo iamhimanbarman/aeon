@@ -4,7 +4,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import sensible from "@fastify/sensible";
 import { env } from "./config/env.js";
-import { kickFinanceEmailOutboxDrain } from "./email/outbox.service.js";
+import { kickFinanceEmailOutboxDrain, startFinanceEmailOutboxScheduler } from "./email/outbox.service.js";
 import { AppError } from "./lib/errors.js";
 import { dbPlugin } from "./plugins/db.js";
 import { authPlugin } from "./plugins/auth.js";
@@ -15,6 +15,7 @@ import { registerFocusRoutes } from "./modules/focus/routes.js";
 import { registerTaskRoutes } from "./modules/tasks/routes.js";
 import { registerSyncRoutes } from "./modules/sync/routes.js";
 export function buildApp() {
+    let stopFinanceEmailOutboxScheduler = null;
     const app = Fastify({
         bodyLimit: 1_048_576,
         logger: {
@@ -46,6 +47,11 @@ export function buildApp() {
     app.register(authPlugin);
     app.addHook("onReady", async () => {
         kickFinanceEmailOutboxDrain(app.db, app.log, { force: true });
+        stopFinanceEmailOutboxScheduler = startFinanceEmailOutboxScheduler(app.db, app.log);
+    });
+    app.addHook("onClose", async () => {
+        stopFinanceEmailOutboxScheduler?.();
+        stopFinanceEmailOutboxScheduler = null;
     });
     app.setErrorHandler((error, request, reply) => {
         request.log.error({ err: error }, "request_failed");

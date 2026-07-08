@@ -876,6 +876,53 @@ export async function listFinanceCounterpartyStatementRecordsForEmail(
   }));
 }
 
+export async function listFinanceCounterpartyRecordDeliveryStatuses(
+  db: Sql<Record<string, unknown>>,
+  userId: string,
+  recordIds: string[]
+): Promise<Array<{ id: string; emailSharedAt: string | null }>> {
+  const uniqueRecordIds = Array.from(new Set(recordIds.map((recordId) => recordId.trim()).filter(Boolean)));
+
+  if (uniqueRecordIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db.unsafe<{
+    id: string;
+    email_shared_at: Date | string | null;
+  }[]>(
+    `
+      select
+        id,
+        email_shared_at
+      from finance_counterparty_records
+      where user_id = $1::uuid
+        and id = any($2::text[])
+        and deleted_at is null
+    `,
+    [userId, uniqueRecordIds]
+  );
+
+  if (rows.length !== uniqueRecordIds.length) {
+    throw badRequest("Some selected ledger records were not found.");
+  }
+
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+
+  return uniqueRecordIds.map((recordId) => {
+    const row = rowsById.get(recordId);
+
+    if (!row) {
+      throw badRequest("Some selected ledger records were not found.");
+    }
+
+    return {
+      id: row.id,
+      emailSharedAt: row.email_shared_at == null ? null : serializeDate(row.email_shared_at)
+    };
+  });
+}
+
 export async function updateFinanceCounterpartyRecordStatuses(
   db: Sql<Record<string, unknown>>,
   userId: string,

@@ -78,7 +78,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.aeon.app.data.auth.AuthSessionState
+import com.aeon.app.data.auth.AuthRepository
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyDirectionStorage
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyEmailPreferenceStorage
 import com.aeon.app.data.local.database.entities.FinanceCounterpartyEntity
@@ -112,6 +112,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Currency
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -130,8 +131,6 @@ fun AeonFinanceCounterpartyRecordsRoute(
     val records by remember(container) {
         container.repositories.finance.observeCounterpartyRecords()
     }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val authState by container.authRepository.sessionState.collectAsStateWithLifecycle()
-    val accessToken = (authState as? AuthSessionState.Authenticated)?.session?.accessToken
 
     var showAddUserSheet by rememberSaveable { mutableStateOf(false) }
     var userName by rememberSaveable { mutableStateOf("") }
@@ -198,11 +197,12 @@ fun AeonFinanceCounterpartyRecordsRoute(
                             duration = AeonToastDuration.Short
                         )
 
-                        if (!accessToken.isNullOrBlank() && remoteClient.isConfigured()) {
+                        val freshAccessToken = resolveFinanceAccessToken(container.authRepository)
+                        if (!freshAccessToken.isNullOrBlank() && remoteClient.isConfigured()) {
                             scope.launch {
                                 runCatching {
                                     remoteClient.syncCounterparty(
-                                        accessToken = accessToken,
+                                        accessToken = freshAccessToken,
                                         input = FinanceRemoteCounterpartyInput(
                                             id = counterparty.id,
                                             name = counterparty.name,
@@ -249,8 +249,6 @@ fun AeonFinanceCounterpartyDetailRoute(
     val records by remember(container, counterpartyId) {
         container.repositories.finance.observeCounterpartyRecords(counterpartyId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val authState by container.authRepository.sessionState.collectAsStateWithLifecycle()
-    val accessToken = (authState as? AuthSessionState.Authenticated)?.session?.accessToken
 
     var showAddEntrySheet by rememberSaveable { mutableStateOf(false) }
     var direction by rememberSaveable { mutableStateOf(FinanceCounterpartyDirectionStorage.OwedToMe) }
@@ -296,12 +294,14 @@ fun AeonFinanceCounterpartyDetailRoute(
         currentCounterparty: FinanceCounterpartyEntity,
         record: FinanceCounterpartyRecordEntity
     ): JSONObject? {
-        if (accessToken.isNullOrBlank() || !remoteClient.isConfigured()) {
+        if (!remoteClient.isConfigured()) {
             return null
         }
 
+        val freshAccessToken = resolveFinanceAccessToken(container.authRepository) ?: return null
+
         return remoteClient.syncCounterpartyRecord(
-            accessToken = accessToken,
+            accessToken = freshAccessToken,
             input = FinanceRemoteCounterpartyShareInput(
                 id = record.id,
                 counterpartyId = currentCounterparty.id,
@@ -335,10 +335,16 @@ fun AeonFinanceCounterpartyDetailRoute(
             container.repositories.finance.setCounterpartyRecordSettled(record.id, settled)
         }
 
-        if (currentCounterparty != null && !accessToken.isNullOrBlank() && remoteClient.isConfigured()) {
+        val freshAccessToken = if (currentCounterparty != null && remoteClient.isConfigured()) {
+            resolveFinanceAccessToken(container.authRepository)
+        } else {
+            null
+        }
+
+        if (currentCounterparty != null && !freshAccessToken.isNullOrBlank() && remoteClient.isConfigured()) {
             runCatching {
                 remoteClient.updateCounterpartyRecordStatus(
-                    accessToken = accessToken,
+                    accessToken = freshAccessToken,
                     input = FinanceRemoteCounterpartyRecordStatusInput(
                         counterpartyId = currentCounterparty.id,
                         recordIds = updatedRecords.map(FinanceCounterpartyRecordEntity::id),
@@ -361,10 +367,23 @@ fun AeonFinanceCounterpartyDetailRoute(
                             )
                         }
                     } else if (emailStatus == "queued") {
-                        toastHostState.showWarning(
-                            title = "Email queued",
-                            duration = AeonToastDuration.Short
-                        )
+                        val delivered = syncQueuedLedgerDeliveryState(
+                            remoteClient = remoteClient,
+                            accessToken = freshAccessToken,
+                            recordIds = updatedRecords.map(FinanceCounterpartyRecordEntity::id)
+                        ) { recordId, deliveredAt ->
+                            container.repositories.finance.markCounterpartyRecordShared(
+                                recordId = recordId,
+                                sharedAt = deliveredAt
+                            )
+                        }
+
+                        if (!delivered) {
+                            toastHostState.showWarning(
+                                title = "Email queued",
+                                duration = AeonToastDuration.Short
+                            )
+                        }
                     } else if (emailStatus == "failed") {
                         toastHostState.showWarning(
                             title = "Settlement email failed",
@@ -383,7 +402,7 @@ fun AeonFinanceCounterpartyDetailRoute(
                 title = "Add email first",
                 duration = AeonToastDuration.Short
             )
-        } else if (currentCounterparty != null && accessToken.isNullOrBlank()) {
+        } else if (currentCounterparty != null && freshAccessToken.isNullOrBlank()) {
             toastHostState.showWarning(
                 title = "Cloud sync pending",
                 duration = AeonToastDuration.Short
@@ -543,11 +562,12 @@ fun AeonFinanceCounterpartyDetailRoute(
                             duration = AeonToastDuration.Short
                         )
 
-                        if (!accessToken.isNullOrBlank() && remoteClient.isConfigured()) {
+                        val freshAccessToken = resolveFinanceAccessToken(container.authRepository)
+                        if (!freshAccessToken.isNullOrBlank() && remoteClient.isConfigured()) {
                             scope.launch {
                                 runCatching {
                                     remoteClient.syncCounterparty(
-                                        accessToken = accessToken,
+                                        accessToken = freshAccessToken,
                                         input = FinanceRemoteCounterpartyInput(
                                             id = updatedCounterparty.id,
                                             name = updatedCounterparty.name,
@@ -665,13 +685,6 @@ fun AeonFinanceCounterpartyDetailRoute(
 
                         when {
                             email.isBlank() -> Unit
-                            accessToken.isNullOrBlank() -> {
-                                toastHostState.showWarning(
-                                    title = "Cloud sync pending",
-                                    duration = AeonToastDuration.Short
-                                )
-                            }
-
                             !remoteClient.isConfigured() -> {
                                 toastHostState.showWarning(
                                     title = "Cloud sync off",
@@ -681,11 +694,21 @@ fun AeonFinanceCounterpartyDetailRoute(
 
                             else -> {
                                 scope.launch {
+                                    val freshAccessToken = resolveFinanceAccessToken(container.authRepository)
+
+                                    if (freshAccessToken.isNullOrBlank()) {
+                                        toastHostState.showWarning(
+                                            title = "Cloud sync pending",
+                                            duration = AeonToastDuration.Short
+                                        )
+                                        return@launch
+                                    }
+
                                     runCatching {
                                         var response = syncCounterpartyRecordUpdate(currentCounterparty, record)
                                         if (record.status != FinanceCounterpartyRecordStatusStorage.Open) {
                                             response = remoteClient.updateCounterpartyRecordStatus(
-                                                accessToken = accessToken,
+                                                accessToken = freshAccessToken,
                                                 input = FinanceRemoteCounterpartyRecordStatusInput(
                                                     counterpartyId = currentCounterparty.id,
                                                     recordIds = listOf(record.id),
@@ -703,10 +726,23 @@ fun AeonFinanceCounterpartyDetailRoute(
                                                 sharedAt = sharedAt ?: Instant.now()
                                             )
                                         } else if (emailStatus == "queued") {
-                                            toastHostState.showWarning(
-                                                title = "Email queued",
-                                                duration = AeonToastDuration.Short
-                                            )
+                                            val delivered = syncQueuedLedgerDeliveryState(
+                                                remoteClient = remoteClient,
+                                                accessToken = freshAccessToken,
+                                                recordIds = listOf(record.id)
+                                            ) { recordId, deliveredAt ->
+                                                container.repositories.finance.markCounterpartyRecordShared(
+                                                    recordId = recordId,
+                                                    sharedAt = deliveredAt
+                                                )
+                                            }
+
+                                            if (!delivered) {
+                                                toastHostState.showWarning(
+                                                    title = "Email queued",
+                                                    duration = AeonToastDuration.Short
+                                                )
+                                            }
                                         } else if (emailStatus.isNotBlank() && emailStatus != "skipped") {
                                             toastHostState.showWarning(
                                                 title = "Email failed",
@@ -741,18 +777,16 @@ fun AeonFinanceCounterpartyDetailRoute(
             onDismiss = { actionRecordId = null },
             onEdit = {
                 val record = activeActionRecord
-                if (record != null) {
-                    editingRecordId = record.id
-                    direction = record.direction
-                    amountText = record.amount.stripTrailingZeros().toPlainString()
-                    purpose = record.purpose
-                    note = record.note.orEmpty()
-                    showAddEntrySheet = true
-                }
+                editingRecordId = record.id
+                direction = record.direction
+                amountText = record.amount.stripTrailingZeros().toPlainString()
+                purpose = record.purpose
+                note = record.note.orEmpty()
+                showAddEntrySheet = true
                 actionRecordId = null
             },
             onDelete = {
-                deleteRecordId = activeActionRecord?.id
+                deleteRecordId = activeActionRecord.id
                 actionRecordId = null
             }
         )
@@ -768,7 +802,7 @@ fun AeonFinanceCounterpartyDetailRoute(
                 }
             },
             onDelete = {
-                val record = activeDeleteRecord ?: return@LedgerDeleteRecordSheet
+                val record = activeDeleteRecord
                 scope.launch {
                     deletingRecord = true
                     try {
@@ -783,10 +817,11 @@ fun AeonFinanceCounterpartyDetailRoute(
                             duration = AeonToastDuration.Short
                         )
 
-                        if (!accessToken.isNullOrBlank() && remoteClient.isConfigured()) {
+                        val freshAccessToken = resolveFinanceAccessToken(container.authRepository)
+                        if (!freshAccessToken.isNullOrBlank() && remoteClient.isConfigured()) {
                             runCatching {
                                 remoteClient.deleteCounterpartyRecord(
-                                    accessToken = accessToken,
+                                    accessToken = freshAccessToken,
                                     recordId = record.id
                                 )
                             }.onFailure {
@@ -826,8 +861,6 @@ fun AeonLedgerManualEmailRoute(
     val records by remember(container, counterpartyId) {
         container.repositories.finance.observeCounterpartyRecords(counterpartyId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val authState by container.authRepository.sessionState.collectAsStateWithLifecycle()
-    val accessToken = (authState as? AuthSessionState.Authenticated)?.session?.accessToken
 
     var selectedRecordIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var selectedFilterKey by rememberSaveable { mutableStateOf(LedgerManualEmailFilter.All.key) }
@@ -920,14 +953,6 @@ fun AeonLedgerManualEmailRoute(
                         return@launch
                     }
 
-                    accessToken.isNullOrBlank() -> {
-                        toastHostState.showWarning(
-                            title = "Sign in required",
-                            duration = AeonToastDuration.Short
-                        )
-                        return@launch
-                    }
-
                     !remoteClient.isConfigured() -> {
                         toastHostState.showWarning(
                             title = "Cloud sync off",
@@ -939,8 +964,17 @@ fun AeonLedgerManualEmailRoute(
 
                 sending = true
                 try {
+                    val freshAccessToken = resolveFinanceAccessToken(container.authRepository)
+                    if (freshAccessToken.isNullOrBlank()) {
+                        toastHostState.showWarning(
+                            title = "Sign in required",
+                            duration = AeonToastDuration.Short
+                        )
+                        return@launch
+                    }
+
                     val response = remoteClient.sendCounterpartyRecordsEmail(
-                        accessToken = accessToken,
+                        accessToken = freshAccessToken,
                         input = FinanceRemoteCounterpartyManualEmailInput(
                             counterpartyId = counterpartyId,
                             recordIds = selectedRecordIds,
@@ -964,10 +998,28 @@ fun AeonLedgerManualEmailRoute(
                         }
 
                         "queued" -> {
-                            toastHostState.showWarning(
-                                title = "Email queued",
-                                duration = AeonToastDuration.Short
-                            )
+                            val delivered = syncQueuedLedgerDeliveryState(
+                                remoteClient = remoteClient,
+                                accessToken = freshAccessToken,
+                                recordIds = selectedRecordIds
+                            ) { recordId, deliveredAt ->
+                                container.repositories.finance.markCounterpartyRecordShared(
+                                    recordId = recordId,
+                                    sharedAt = deliveredAt
+                                )
+                            }
+
+                            if (delivered) {
+                                toastHostState.showSuccess(
+                                    title = "Email sent",
+                                    duration = AeonToastDuration.Short
+                                )
+                            } else {
+                                toastHostState.showWarning(
+                                    title = "Email queued",
+                                    duration = AeonToastDuration.Short
+                                )
+                            }
                             onBack()
                         }
 
@@ -1011,8 +1063,6 @@ fun AeonLedgerEmailPreferenceRoute(
     val counterparty by remember(container, counterpartyId) {
         container.repositories.finance.observeCounterparty(counterpartyId)
     }.collectAsStateWithLifecycle(initialValue = null)
-    val authState by container.authRepository.sessionState.collectAsStateWithLifecycle()
-    val accessToken = (authState as? AuthSessionState.Authenticated)?.session?.accessToken
     var savingPreference by rememberSaveable { mutableStateOf(false) }
 
     LedgerEmailPreferenceScreen(
@@ -1036,11 +1086,12 @@ fun AeonLedgerEmailPreferenceRoute(
                         duration = AeonToastDuration.Short
                     )
 
-                    if (!accessToken.isNullOrBlank() && remoteClient.isConfigured()) {
+                    val freshAccessToken = resolveFinanceAccessToken(container.authRepository)
+                    if (!freshAccessToken.isNullOrBlank() && remoteClient.isConfigured()) {
                         scope.launch {
                             runCatching {
                                 remoteClient.syncCounterparty(
-                                    accessToken = accessToken,
+                                    accessToken = freshAccessToken,
                                     input = FinanceRemoteCounterpartyInput(
                                         id = updatedCounterparty.id,
                                         name = updatedCounterparty.name,
@@ -3729,6 +3780,51 @@ private fun Instant.toFinanceLedgerTimeLabel(): String {
 private fun Instant.toFinanceLedgerDateLabel(): String {
     return atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+}
+
+private suspend fun resolveFinanceAccessToken(
+    authRepository: AuthRepository
+): String? {
+    return authRepository.getFreshAuthenticatedSession()
+        ?.accessToken
+        ?.trim()
+        ?.takeIf { token -> token.isNotBlank() }
+}
+
+private suspend fun syncQueuedLedgerDeliveryState(
+    remoteClient: FinanceRemoteClient,
+    accessToken: String,
+    recordIds: List<String>,
+    onDelivered: suspend (recordId: String, deliveredAt: Instant) -> Unit
+): Boolean {
+    val distinctRecordIds = recordIds.distinct()
+        .filter { recordId -> recordId.isNotBlank() }
+
+    if (distinctRecordIds.isEmpty()) {
+        return false
+    }
+
+    repeat(5) { attempt ->
+        val statuses = remoteClient.fetchCounterpartyRecordDeliveryStatuses(
+            accessToken = accessToken,
+            recordIds = distinctRecordIds
+        )
+        val deliveredStatuses = statuses.filter { status -> status.emailSharedAt != null }
+
+        deliveredStatuses.forEach { status ->
+            onDelivered(status.id, status.emailSharedAt ?: return@forEach)
+        }
+
+        if (deliveredStatuses.size == distinctRecordIds.size) {
+            return true
+        }
+
+        if (attempt < 4) {
+            delay(1_200)
+        }
+    }
+
+    return false
 }
 
 private fun JSONObject.resolveFinanceEmailSharedAt(): Instant? {

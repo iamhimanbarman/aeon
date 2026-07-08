@@ -24,6 +24,7 @@ import {
   listFinanceAccounts,
   listFinanceBudgets,
   listFinanceCategories,
+  listFinanceCounterpartyRecordDeliveryStatuses,
   listFinanceCounterpartyRecordsByIdsForEmail,
   listOpenFinanceCounterpartyRecordsForEmail,
   listFinanceCounterpartyStatementRecordsForEmail,
@@ -38,6 +39,7 @@ import {
   financeAccountInputSchema,
   financeBudgetQuerySchema,
   financeCounterpartyInputSchema,
+  financeCounterpartyRecordDeliveryStatusInputSchema,
   financeCounterpartyManualEmailInputSchema,
   financeCounterpartyRecordInputSchema,
   financeCounterpartyRecordStatusInputSchema,
@@ -225,6 +227,25 @@ export async function registerFinanceRoutes(app: FastifyInstance): Promise<void>
         ...result.record,
         emailSharedAt
       }
+    };
+  });
+
+  app.post("/counterparty-record-delivery-status", { preHandler: app.authenticate }, async (request) => {
+    const body = parseWithSchema(
+      financeCounterpartyRecordDeliveryStatusInputSchema,
+      request.body,
+      "Invalid finance counterparty delivery payload."
+    );
+
+    const records = await listFinanceCounterpartyRecordDeliveryStatuses(
+      app.db,
+      request.authUser!.userId,
+      body.recordIds
+    );
+
+    return {
+      ok: true,
+      records
     };
   });
 

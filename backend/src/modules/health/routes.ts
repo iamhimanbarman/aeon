@@ -13,6 +13,22 @@ const quietHealthRoute: RouteShorthandOptions = {
 export async function registerHealthRoutes(app: FastifyInstance): Promise<void> {
   app.route({
     method: ["GET", "HEAD"],
+    url: "/",
+    ...quietHealthRoute,
+    handler: async (request, reply) => {
+      if (request.method === "HEAD") {
+        return reply.code(200).send();
+      }
+
+      return {
+        ...buildShallowHealthPayload(),
+        healthPath: "/api/health"
+      };
+    }
+  });
+
+  app.route({
+    method: ["GET", "HEAD"],
     url: "/api/health",
     ...quietHealthRoute,
     handler: async (request, reply) => {

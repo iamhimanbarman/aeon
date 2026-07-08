@@ -43,6 +43,23 @@ afterEach(async () => {
 });
 
 describe("health routes", () => {
+  it("GET / returns 200", async () => {
+    const app = await createTestApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      service: "aeon-backend",
+      status: "healthy",
+      healthPath: "/api/health"
+    });
+  });
+
   it("GET /api/health returns 200", async () => {
     const app = await createTestApp();
 

@@ -64,6 +64,11 @@ internal data class FinanceRemoteCounterpartyRecordStatusInput(
     val message: String? = null
 )
 
+internal data class FinanceRemoteCounterpartyDeliveryStatus(
+    val id: String,
+    val emailSharedAt: Instant?
+)
+
 internal class FinanceRemoteClient(
     private val baseUrl: String = BuildConfig.AUTH_BASE_URL
 ) {
@@ -274,6 +279,28 @@ internal class FinanceRemoteClient(
                 )
                 .build()
         }
+    }
+
+    suspend fun fetchCounterpartyRecordDeliveryStatuses(
+        accessToken: String,
+        recordIds: List<String>
+    ): List<FinanceRemoteCounterpartyDeliveryStatus> = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("recordIds", JSONArray(recordIds.distinct()))
+
+        val response = executeJsonObjectWithRetry(maxAttempts = 2) {
+            Request.Builder()
+                .url(buildUrl("/v1/finance/counterparty-record-delivery-status", emptyMap()))
+                .header("Authorization", "Bearer $accessToken")
+                .header("Accept", "application/json")
+                .post(
+                    payload.toString()
+                        .toRequestBody("application/json; charset=utf-8".toMediaType())
+                )
+                .build()
+        }
+
+        response.optJSONArray("records").toFinanceCounterpartyDeliveryStatuses()
     }
 
     suspend fun deleteCounterpartyRecord(
@@ -514,6 +541,27 @@ private fun JSONArray?.toStringList(): List<String> {
             optString(index)
                 .takeIf { value -> value.isNotBlank() }
                 ?.let(::add)
+        }
+    }
+}
+
+private fun JSONArray?.toFinanceCounterpartyDeliveryStatuses(): List<FinanceRemoteCounterpartyDeliveryStatus> {
+    if (this == null) return emptyList()
+
+    return buildList {
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            val id = item.optString("id").takeIf { value -> value.isNotBlank() } ?: continue
+            val emailSharedAt = item.optString("emailSharedAt")
+                .takeIf { value -> value.isNotBlank() }
+                ?.let { value -> runCatching { Instant.parse(value) }.getOrNull() }
+
+            add(
+                FinanceRemoteCounterpartyDeliveryStatus(
+                    id = id,
+                    emailSharedAt = emailSharedAt
+                )
+            )
         }
     }
 }

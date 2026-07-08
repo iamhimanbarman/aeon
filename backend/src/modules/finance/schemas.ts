@@ -144,3 +144,11 @@ export const financeCounterpartyRecordStatusInputSchema = z.object({
   status: z.enum(["open", "settled"]).default("settled"),
   message: optionalTrimmedStringSchema
 });
+
+export const financeCounterpartyRecordDeliveryStatusInputSchema = z.object({
+  recordIds: z
+    .array(z.string().trim().min(1).max(120))
+    .min(1, "Select at least one ledger record.")
+    .max(50, "Select fewer ledger records at once.")
+    .transform((recordIds) => Array.from(new Set(recordIds)))
+});

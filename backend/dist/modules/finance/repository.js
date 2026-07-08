@@ -622,6 +622,35 @@ export async function listFinanceCounterpartyStatementRecordsForEmail(db, userId
         createdAt: serializeDate(row.created_at)
     }));
 }
+export async function listFinanceCounterpartyRecordDeliveryStatuses(db, userId, recordIds) {
+    const uniqueRecordIds = Array.from(new Set(recordIds.map((recordId) => recordId.trim()).filter(Boolean)));
+    if (uniqueRecordIds.length === 0) {
+        return [];
+    }
+    const rows = await db.unsafe(`
+      select
+        id,
+        email_shared_at
+      from finance_counterparty_records
+      where user_id = $1::uuid
+        and id = any($2::text[])
+        and deleted_at is null
+    `, [userId, uniqueRecordIds]);
+    if (rows.length !== uniqueRecordIds.length) {
+        throw badRequest("Some selected ledger records were not found.");
+    }
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    return uniqueRecordIds.map((recordId) => {
+        const row = rowsById.get(recordId);
+        if (!row) {
+            throw badRequest("Some selected ledger records were not found.");
+        }
+        return {
+            id: row.id,
+            emailSharedAt: row.email_shared_at == null ? null : serializeDate(row.email_shared_at)
+        };
+    });
+}
 export async function updateFinanceCounterpartyRecordStatuses(db, userId, input) {
     const rows = await db.unsafe(`
       update finance_counterparty_records

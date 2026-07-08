@@ -2,8 +2,8 @@ import { sendFinanceCounterpartyEmail } from "../../email/email.service.js";
 import { buildFinanceEmailDeliveryKey, kickFinanceEmailOutboxDrain, sendFinanceEmailWithQueueFallback } from "../../email/outbox.service.js";
 import { parseMonthKey } from "../../lib/dates.js";
 import { parseWithSchema } from "../../lib/validation.js";
-import { archiveFinanceAccount, createFinanceCounterpartyRecord, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCounterpartyRecord, deleteFinanceCategory, deleteFinanceTransaction, getFinanceCounterpartyForEmail, getFinanceCounterpartyShareTarget, getFinanceOverview, getFinanceTransaction, getFinanceLedgerOwnerProfile, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceCounterpartyRecordsByIdsForEmail, listOpenFinanceCounterpartyRecordsForEmail, listFinanceCounterpartyStatementRecordsForEmail, listFinanceTransactionMonths, listFinanceTransactions, shouldSendFinanceCounterpartyEmail, upsertFinanceCounterparty, updateFinanceCounterpartyRecordStatuses, setFinanceBudgetsForMonth } from "./repository.js";
-import { financeAccountInputSchema, financeBudgetQuerySchema, financeCounterpartyInputSchema, financeCounterpartyManualEmailInputSchema, financeCounterpartyRecordInputSchema, financeCounterpartyRecordStatusInputSchema, financeCounterpartyShareInputSchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
+import { archiveFinanceAccount, createFinanceCounterpartyRecord, createOrUpdateFinanceAccount, createOrUpdateFinanceCategory, createOrUpdateFinanceTransaction, deleteFinanceCounterpartyRecord, deleteFinanceCategory, deleteFinanceTransaction, getFinanceCounterpartyForEmail, getFinanceCounterpartyShareTarget, getFinanceOverview, getFinanceTransaction, getFinanceLedgerOwnerProfile, listFinanceAccounts, listFinanceBudgets, listFinanceCategories, listFinanceCounterpartyRecordDeliveryStatuses, listFinanceCounterpartyRecordsByIdsForEmail, listOpenFinanceCounterpartyRecordsForEmail, listFinanceCounterpartyStatementRecordsForEmail, listFinanceTransactionMonths, listFinanceTransactions, shouldSendFinanceCounterpartyEmail, upsertFinanceCounterparty, updateFinanceCounterpartyRecordStatuses, setFinanceBudgetsForMonth } from "./repository.js";
+import { financeAccountInputSchema, financeBudgetQuerySchema, financeCounterpartyInputSchema, financeCounterpartyRecordDeliveryStatusInputSchema, financeCounterpartyManualEmailInputSchema, financeCounterpartyRecordInputSchema, financeCounterpartyRecordStatusInputSchema, financeCounterpartyShareInputSchema, financeCategoryInputSchema, financeSetMonthBudgetSchema, financeTransactionInputSchema, financeTransactionMonthsQuerySchema, financeTransactionQuerySchema } from "./schemas.js";
 export async function registerFinanceRoutes(app) {
     app.addHook("onRequest", async () => {
         kickFinanceEmailOutboxDrain(app.db, app.log);
@@ -137,6 +137,14 @@ export async function registerFinanceRoutes(app) {
                 ...result.record,
                 emailSharedAt
             }
+        };
+    });
+    app.post("/counterparty-record-delivery-status", { preHandler: app.authenticate }, async (request) => {
+        const body = parseWithSchema(financeCounterpartyRecordDeliveryStatusInputSchema, request.body, "Invalid finance counterparty delivery payload.");
+        const records = await listFinanceCounterpartyRecordDeliveryStatuses(app.db, request.authUser.userId, body.recordIds);
+        return {
+            ok: true,
+            records
         };
     });
     app.post("/counterparty-record-status", { preHandler: app.authenticate }, async (request) => {
